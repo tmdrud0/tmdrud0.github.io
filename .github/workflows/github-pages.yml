@@ -4,9 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - "docs/**"
-      - ".github/workflows/github-pages.yml"
   workflow_dispatch:
 
 permissions:
@@ -31,7 +28,7 @@ jobs:
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:
-          source: ./docs
+          source: ./
           destination: ./_site
 
       - name: Upload artifact
