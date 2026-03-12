@@ -7,6 +7,9 @@ baseurl: ""
 markdown: kramdown
 permalink: /posts/:title/
 
+exclude:
+  - docs
+
 defaults:
   - scope:
       path: ""
