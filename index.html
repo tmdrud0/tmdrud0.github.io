@@ -1,4 +1,1056 @@
----
-layout: home
-title: "Engineering Notes"
----
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>온라인 저지 채점 파이프라인 — 설계 포트폴리오</title>
+<meta name="description" content="대회 트래픽을 버티는 온라인 저지 채점 파이프라인 — V0→V5 설계 기록">
+</head>
+<body>
+<style>
+  :root {
+    --page: #f7f8f6;
+    --card: #fdfdfc;
+    --card-2: #f1f3ef;
+    --ink: #151915;
+    --ink-2: #4d554f;
+    --muted: #878d86;
+    --line: #e2e5df;
+    --line-strong: #cdd2ca;
+    --accent: #0e7a4e;
+    --accent-ink: #0a6440;
+    --accent-soft: #e2f1e9;
+    --queue: #c94f1e;
+    --queue-soft: #faeae2;
+    --blue: #2a78d6;
+    --blue-soft: #e7f0fb;
+    --violet: #4a3aa7;
+    --code-bg: #f0f2ee;
+    --code-ink: #2b332d;
+    --bar-naive: #2a78d6;
+    --bar-opt: #1baf7a;
+    --shadow: 0 1px 2px rgba(21,25,21,.05), 0 8px 24px -12px rgba(21,25,21,.10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0e100e;
+      --card: #161a17;
+      --card-2: #1c211d;
+      --ink: #eef1ed;
+      --ink-2: #b6bfb6;
+      --muted: #7e857d;
+      --line: #262b26;
+      --line-strong: #333a33;
+      --accent: #41c489;
+      --accent-ink: #52d197;
+      --accent-soft: rgba(65,196,137,.13);
+      --queue: #e8763f;
+      --queue-soft: rgba(232,118,63,.13);
+      --blue: #3987e5;
+      --blue-soft: rgba(57,135,229,.14);
+      --violet: #9085e9;
+      --code-bg: #12150f;
+      --code-ink: #ccd4c9;
+      --bar-naive: #3987e5;
+      --bar-opt: #199e70;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --page: #0e100e;
+    --card: #161a17;
+    --card-2: #1c211d;
+    --ink: #eef1ed;
+    --ink-2: #b6bfb6;
+    --muted: #7e857d;
+    --line: #262b26;
+    --line-strong: #333a33;
+    --accent: #41c489;
+    --accent-ink: #52d197;
+    --accent-soft: rgba(65,196,137,.13);
+    --queue: #e8763f;
+    --queue-soft: rgba(232,118,63,.13);
+    --blue: #3987e5;
+    --blue-soft: rgba(57,135,229,.14);
+    --violet: #9085e9;
+    --code-bg: #12150f;
+    --code-ink: #ccd4c9;
+    --bar-naive: #3987e5;
+    --bar-opt: #199e70;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
+  }
+  :root[data-theme="light"] {
+    --page: #f7f8f6;
+    --card: #fdfdfc;
+    --card-2: #f1f3ef;
+    --ink: #151915;
+    --ink-2: #4d554f;
+    --muted: #878d86;
+    --line: #e2e5df;
+    --line-strong: #cdd2ca;
+    --accent: #0e7a4e;
+    --accent-ink: #0a6440;
+    --accent-soft: #e2f1e9;
+    --queue: #c94f1e;
+    --queue-soft: #faeae2;
+    --blue: #2a78d6;
+    --blue-soft: #e7f0fb;
+    --violet: #4a3aa7;
+    --code-bg: #f0f2ee;
+    --code-ink: #2b332d;
+    --bar-naive: #2a78d6;
+    --bar-opt: #1baf7a;
+    --shadow: 0 1px 2px rgba(21,25,21,.05), 0 8px 24px -12px rgba(21,25,21,.10);
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.72;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono, code, pre {
+    font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Nanum Gothic Coding", monospace;
+  }
+
+  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- sticky nav ---- */
+  .nav {
+    position: sticky; top: 0; z-index: 50;
+    background: color-mix(in srgb, var(--page) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 880px; margin: 0 auto; padding: 10px 24px;
+    display: flex; align-items: center; gap: 18px; overflow-x: auto;
+  }
+  .nav-logo {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .06em;
+    color: var(--accent-ink); white-space: nowrap;
+  }
+  .nav a {
+    font-size: 13px; color: var(--ink-2); text-decoration: none;
+    white-space: nowrap; padding: 3px 2px; border-radius: 4px;
+  }
+  .nav a:hover, .nav a:focus-visible { color: var(--accent-ink); }
+  .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav .num { font-size: 11px; color: var(--muted); margin-right: 2px; }
+
+  /* ---- hero ---- */
+  .hero { padding: 72px 0 40px; }
+  .eyebrow {
+    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--accent-ink); font-weight: 600; margin: 0 0 14px;
+  }
+  .eyebrow::before { content: "$ "; color: var(--muted); }
+  h1 {
+    font-size: clamp(30px, 5.4vw, 46px); line-height: 1.22;
+    letter-spacing: -0.025em; font-weight: 800; margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h1 .thin { color: var(--ink-2); font-weight: 600; }
+  .lede { font-size: 17px; color: var(--ink-2); max-width: 40em; margin: 0 0 26px; text-wrap: pretty; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 34px; }
+  .chip {
+    font-size: 12.5px; font-weight: 600; padding: 5px 12px;
+    border: 1px solid var(--line-strong); border-radius: 999px;
+    color: var(--ink-2); background: var(--card);
+  }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  @media (max-width: 620px) { .stats { grid-template-columns: 1fr; } }
+  .stat {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; box-shadow: var(--shadow);
+  }
+  .stat .k { font-size: 12px; color: var(--muted); letter-spacing: .05em; margin-bottom: 4px; }
+  .stat .v { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; }
+  .stat .v small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 4px; }
+
+  /* ---- sections ---- */
+  section { padding: 56px 0 8px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  .sec-num {
+    font-size: 13px; font-weight: 700; color: var(--accent-ink);
+    letter-spacing: .08em;
+  }
+  h2 {
+    font-size: clamp(23px, 3.4vw, 30px); font-weight: 750; letter-spacing: -0.02em;
+    margin: 0; text-wrap: balance;
+  }
+  .sec-sub { color: var(--ink-2); margin: 8px 0 28px; max-width: 44em; text-wrap: pretty; }
+  h3 { font-size: 18.5px; font-weight: 700; letter-spacing: -0.01em; margin: 34px 0 10px; }
+  h4 { font-size: 15.5px; font-weight: 700; margin: 22px 0 8px; }
+  p { margin: 0 0 14px; max-width: 46em; }
+  ul, ol { margin: 0 0 16px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  li::marker { color: var(--muted); }
+  strong { font-weight: 700; }
+  hr.sep { border: 0; border-top: 1px solid var(--line); margin: 48px 0 0; }
+
+  code {
+    font-size: .88em; background: var(--code-bg); color: var(--code-ink);
+    padding: 1.5px 6px; border-radius: 5px;
+  }
+  pre {
+    background: var(--code-bg); color: var(--code-ink);
+    border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; font-size: 13px; line-height: 1.6;
+    overflow-x: auto; margin: 0 0 16px;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  pre .kw { color: var(--blue); font-weight: 600; }
+  pre .cm { color: var(--muted); }
+  pre .str { color: var(--accent-ink); }
+
+  /* ---- badges (verdicts) ---- */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; font-weight: 700; letter-spacing: .06em;
+    padding: 3px 9px; border-radius: 6px; white-space: nowrap;
+  }
+  .badge.ac { background: var(--accent-soft); color: var(--accent-ink); }
+  .badge.wa { background: color-mix(in srgb, var(--queue) 13%, transparent); color: var(--queue); }
+  .badge.rt { background: var(--card-2); color: var(--ink-2); }
+  .badge.mq { background: var(--queue-soft); color: var(--queue); }
+
+  /* ---- timeline ---- */
+  .timeline { position: relative; margin-top: 8px; }
+  .timeline::before {
+    content: ""; position: absolute; left: 21px; top: 10px; bottom: 10px;
+    width: 2px; background: var(--line-strong); border-radius: 2px;
+  }
+  .tl-item { position: relative; padding: 0 0 30px 62px; }
+  .tl-node {
+    position: absolute; left: 0; top: 0;
+    width: 44px; height: 44px; border-radius: 12px;
+    background: var(--card); border: 1.5px solid var(--line-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 13px; font-weight: 700; color: var(--ink-2);
+    box-shadow: var(--shadow);
+  }
+  .tl-item.final .tl-node { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
+  .tl-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px 22px; box-shadow: var(--shadow);
+  }
+  .tl-item.final > .tl-card { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); }
+  .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .tl-head h3 { margin: 0; font-size: 17.5px; }
+  .tl-desc { color: var(--ink-2); font-size: 14.5px; margin-bottom: 12px; }
+
+  /* flow chips */
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    margin: 12px 0 14px; font-family: "JetBrains Mono", Consolas, monospace;
+  }
+  .flow .fbox {
+    font-size: 11.5px; font-weight: 600; color: var(--ink-2);
+    background: var(--card-2); border: 1px solid var(--line);
+    padding: 4px 10px; border-radius: 7px; white-space: nowrap;
+  }
+  .flow .fbox.db { border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); color: var(--blue); }
+  .flow .fbox.q  { border-color: color-mix(in srgb, var(--queue) 45%, var(--line)); color: var(--queue); }
+  .flow .fbox.hot { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent-ink); }
+  .flow .arr { color: var(--muted); font-size: 12px; }
+
+  .prob { margin: 12px 0 2px; }
+  .prob dt {
+    font-size: 12px; font-weight: 700; letter-spacing: .08em;
+    color: var(--queue); margin-bottom: 6px;
+  }
+  .prob dd { margin: 0; }
+  .prob ul { margin-bottom: 4px; }
+  .prob li { font-size: 14.5px; color: var(--ink-2); }
+
+  /* ---- two-col cards ---- */
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
+  @media (max-width: 680px) { .duo { grid-template-columns: 1fr; } }
+  .opt-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 20px; box-shadow: var(--shadow); position: relative;
+  }
+  .opt-card.picked { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .opt-card h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .opt-card p, .opt-card li { font-size: 14.5px; color: var(--ink-2); }
+  .opt-card .lbl {
+    font-size: 11px; font-weight: 700; letter-spacing: .1em;
+    color: var(--muted); display: block; margin: 12px 0 4px;
+  }
+  .opt-card .lbl.good { color: var(--accent-ink); }
+  .opt-card .lbl.bad { color: var(--queue); }
+  .opt-card ul { padding-left: 18px; margin-bottom: 2px; }
+
+  /* ---- role grid ---- */
+  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0 8px; }
+  @media (max-width: 620px) { .roles { grid-template-columns: 1fr; } }
+  .role {
+    border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px;
+    background: var(--card); padding: 13px 16px;
+  }
+  .role .rname {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 12.5px; font-weight: 700; letter-spacing: .04em; margin-bottom: 3px;
+  }
+  .role .rdesc { font-size: 14px; color: var(--ink-2); }
+  .role.r-db { border-left-color: var(--blue); } .role.r-db .rname { color: var(--blue); }
+  .role.r-mq { border-left-color: var(--queue); } .role.r-mq .rname { color: var(--queue); }
+  .role.r-redis { border-left-color: var(--violet); } .role.r-redis .rname { color: var(--violet); }
+  .role.r-outbox { border-left-color: var(--accent); } .role.r-outbox .rname { color: var(--accent-ink); }
+
+  /* ---- architecture diagram ---- */
+  .diagram-wrap {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); padding: 20px 12px 8px; margin: 22px 0 10px;
+    overflow-x: auto;
+  }
+  .diagram-wrap svg { display: block; min-width: 760px; width: 100%; height: auto; }
+  .diagram-cap { font-size: 13px; color: var(--muted); text-align: center; padding: 6px 16px 14px; }
+  .arch-box { fill: var(--card-2); stroke: var(--line-strong); stroke-width: 1.2; rx: 10; }
+  .arch-box.b-db { stroke: var(--blue); fill: var(--blue-soft); }
+  .arch-box.b-mq { stroke: var(--queue); fill: var(--queue-soft); }
+  .arch-box.b-redis { stroke: var(--violet); fill: color-mix(in srgb, var(--violet) 10%, var(--card)); }
+  .arch-label { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; font-weight: 700; fill: var(--ink); }
+  .arch-sub { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10px; fill: var(--ink-2); }
+  .arch-edge { stroke: var(--line-strong); stroke-width: 1.5; fill: none; }
+  .arch-edge.hot { stroke: var(--accent); }
+  .arch-edge.dashed { stroke-dasharray: 4 4; }
+  .arch-elabel { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10.5px; fill: var(--ink-2); }
+  .arch-step { fill: var(--accent); }
+  .arch-stepnum { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10px; font-weight: 700; fill: var(--page); }
+
+  .steps { counter-reset: step; list-style: none; padding: 0; margin: 20px 0 8px; }
+  .steps li {
+    counter-increment: step; position: relative;
+    padding: 0 0 12px 40px; font-size: 15px; color: var(--ink-2);
+  }
+  .steps li::before {
+    content: counter(step); position: absolute; left: 0; top: 1px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: var(--accent-soft); color: var(--accent-ink);
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 12px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .steps li strong { color: var(--ink); }
+
+  /* ---- deadlock lock-order visual ---- */
+  .lockviz {
+    display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 18px; margin: 14px 0 18px;
+  }
+  @media (max-width: 560px) { .lockviz { grid-template-columns: 1fr; } .lockviz .vs { display: none; } }
+  .lockviz .tx { font-size: 13.5px; }
+  .lockviz .txname {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
+    color: var(--muted); margin-bottom: 8px;
+  }
+  .lockviz .lock-chain { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .lockviz .lk {
+    font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; font-weight: 600;
+    padding: 4px 9px; border-radius: 6px; border: 1px solid var(--line-strong);
+    background: var(--card-2); color: var(--ink-2); white-space: nowrap;
+  }
+  .lockviz .lk.held { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent-ink); }
+  .lockviz .lk.wait { border-color: color-mix(in srgb, var(--queue) 55%, var(--line)); color: var(--queue); border-style: dashed; }
+  .lockviz .vs {
+    display: flex; align-items: center; font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11px; font-weight: 700; color: var(--queue);
+  }
+  .lockviz .cap { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+  /* ---- benchmark chart ---- */
+  .bench {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); padding: 22px 24px 16px; margin: 22px 0 12px;
+  }
+  .bench-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+  .bench-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .legend { display: flex; gap: 18px; margin-bottom: 18px; flex-wrap: wrap; }
+  .legend .li { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
+  .legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+  .sw.naive { background: var(--bar-naive); }
+  .sw.opt { background: var(--bar-opt); }
+
+  .bench-group { margin-bottom: 22px; }
+  .bench-group:last-child { margin-bottom: 6px; }
+  .bg-name {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 12px; font-weight: 700; letter-spacing: .05em;
+    color: var(--ink); margin-bottom: 10px;
+  }
+  .bg-name small { font-weight: 500; color: var(--muted); letter-spacing: 0; }
+  .brow { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .brow .pos { font-size: 12.5px; color: var(--ink-2); font-weight: 600; text-align: right; }
+  .bars { display: flex; flex-direction: column; gap: 3px; }
+  .barline { display: flex; align-items: center; gap: 8px; min-height: 16px; }
+  .bar {
+    height: 13px; border-radius: 0 4px 4px 0; min-width: 3px;
+    transition: opacity .15s ease;
+  }
+  .barline:hover .bar { opacity: .82; }
+  .bar.naive { background: var(--bar-naive); }
+  .bar.opt { background: var(--bar-opt); }
+  .bval {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 11.5px; font-weight: 600; color: var(--ink-2);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .speed {
+    font-family: "JetBrains Mono", Consolas, monospace;
+    font-size: 10.5px; font-weight: 700; color: var(--accent-ink);
+    background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  }
+  .speed.neg { color: var(--queue); background: var(--queue-soft); }
+  .bench-axis { font-size: 11.5px; color: var(--muted); text-align: right; margin-top: 10px; }
+
+  table {
+    width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .table-wrap { overflow-x: auto; }
+  th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { font-size: 12px; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+  td:first-child { font-weight: 600; }
+  td .mono { font-size: 13px; }
+
+  /* ---- callout ---- */
+  .callout {
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+    background: color-mix(in srgb, var(--accent-soft) 55%, var(--card));
+    border-radius: 12px; padding: 16px 20px; margin: 18px 0;
+  }
+  .callout p { margin-bottom: 6px; font-size: 15px; }
+  .callout p:last-child { margin-bottom: 0; }
+
+  footer {
+    margin-top: 72px; border-top: 1px solid var(--line);
+    padding: 28px 0 48px; font-size: 13px; color: var(--muted);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
+  }
+</style>
+
+<nav class="nav" aria-label="섹션 이동">
+  <div class="nav-inner">
+    <span class="nav-logo mono">judge --portfolio</span>
+    <a href="#pipeline"><span class="num mono">01</span>제출 파이프라인</a>
+    <a href="#deadlock"><span class="num mono">02</span>데드락</a>
+    <a href="#scoreboard"><span class="num mono">03</span>스코어보드 회복</a>
+    <a href="#ranking"><span class="num mono">04</span>랭킹 조회</a>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <p class="eyebrow mono">online judge — backend design record</p>
+  <h1>대회 트래픽을 버티는<br>온라인 저지 <span class="thin">채점 파이프라인</span></h1>
+  <p class="lede">
+    사용자가 제출한 코드를 채점해 결과를 알려주는 온라인 저지.
+    짧은 시간에 제출이 집중되는 <strong>대회 + 실시간 스코어보드</strong>를 중심으로,
+    제출 파이프라인을 V0부터 V5까지 6번 재설계하며 유실 방지·중복 처리·복구를 검증한 기록이다.
+  </p>
+  <div class="chips">
+    <span class="chip">Java</span>
+    <span class="chip">Spring</span>
+    <span class="chip">MySQL</span>
+    <span class="chip">Redis</span>
+    <span class="chip">RabbitMQ</span>
+  </div>
+  <div class="stats">
+    <div class="stat">
+      <div class="k mono">PEAK LOAD</div>
+      <div class="v mono">1,000<small>rps</small></div>
+    </div>
+    <div class="stat">
+      <div class="k mono">JUDGE API AVG</div>
+      <div class="v mono">10<small>ms</small></div>
+    </div>
+    <div class="stat">
+      <div class="k mono">JUDGE API P999</div>
+      <div class="v mono">2<small>s (timeout)</small></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ================= 01 PIPELINE ================= -->
+<section id="pipeline">
+  <div class="sec-head">
+    <span class="sec-num mono">01</span>
+    <h2>대회 제출 파이프라인</h2>
+  </div>
+  <p class="sec-sub">
+    요구사항: ① 제출 POST가 성공으로 반환됐다면 실제로도 성공이어야 한다.
+    ② <code>(user, problem, codeHash)</code>는 중복 없이 처리한다.
+    평균 10ms이지만 p999가 2초까지 벌어지는 채점 API 앞에서, 이 두 가지를 지키는 구조를 찾는 과정이다.
+  </p>
+
+  <h3>최종 아키텍처 (V5)</h3>
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 920 330" role="img" aria-label="V5 최종 아키텍처: 클라이언트에서 API 서버, MySQL outbox, RabbitMQ quorum queue, consumer, 채점 API, Redis 스코어보드로 이어지는 흐름">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"/>
+        </marker>
+        <marker id="arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <!-- top lane boxes -->
+      <rect class="arch-box" x="16" y="40" width="100" height="52" rx="10"/>
+      <text class="arch-label" x="66" y="63" text-anchor="middle">클라이언트</text>
+      <text class="arch-sub" x="66" y="79" text-anchor="middle">제출 POST</text>
+
+      <rect class="arch-box" x="166" y="40" width="118" height="52" rx="10"/>
+      <text class="arch-label" x="225" y="63" text-anchor="middle">API 서버</text>
+      <text class="arch-sub" x="225" y="79" text-anchor="middle">Spring</text>
+
+      <rect class="arch-box" x="334" y="40" width="128" height="52" rx="10"/>
+      <text class="arch-label" x="398" y="63" text-anchor="middle">Outbox Relay</text>
+      <text class="arch-sub" x="398" y="79" text-anchor="middle">발행 워커</text>
+
+      <rect class="arch-box b-mq" x="512" y="34" width="160" height="64" rx="10"/>
+      <text class="arch-label" x="592" y="59" text-anchor="middle" fill="var(--queue)">RabbitMQ</text>
+      <text class="arch-sub" x="592" y="75" text-anchor="middle">durable quorum queue</text>
+      <text class="arch-sub" x="592" y="89" text-anchor="middle">persistent · 3+ nodes</text>
+
+      <rect class="arch-box" x="722" y="40" width="108" height="52" rx="10"/>
+      <text class="arch-label" x="776" y="63" text-anchor="middle">Consumer</text>
+      <text class="arch-sub" x="776" y="79" text-anchor="middle">prefetch · 멱등</text>
+
+      <rect class="arch-box" x="722" y="140" width="108" height="52" rx="10"/>
+      <text class="arch-label" x="776" y="163" text-anchor="middle">채점 API</text>
+      <text class="arch-sub" x="776" y="179" text-anchor="middle">avg 10ms · p999 2s</text>
+
+      <!-- bottom lane -->
+      <rect class="arch-box b-db" x="166" y="232" width="428" height="72" rx="10"/>
+      <text class="arch-label" x="380" y="256" text-anchor="middle" fill="var(--blue)">MySQL — 원본(source of truth)</text>
+      <text class="arch-sub" x="380" y="274" text-anchor="middle">contest_submission · outbox · submission_result</text>
+      <text class="arch-sub" x="380" y="290" text-anchor="middle">unique(submissionId, judgeVersion)</text>
+
+      <rect class="arch-box b-redis" x="722" y="240" width="108" height="52" rx="10"/>
+      <text class="arch-label" x="776" y="263" text-anchor="middle" fill="var(--violet)">Redis</text>
+      <text class="arch-sub" x="776" y="279" text-anchor="middle">스코어보드 캐시</text>
+
+      <!-- edges -->
+      <line class="arch-edge" x1="116" y1="66" x2="160" y2="66" marker-end="url(#arr)"/>
+
+      <!-- 1: API -> DB (same tx) -->
+      <path class="arch-edge hot" d="M225,92 L225,228" marker-end="url(#arr-hot)"/>
+      <circle class="arch-step" cx="225" cy="130" r="10"/>
+      <text class="arch-stepnum" x="225" y="133.5" text-anchor="middle">1</text>
+      <text class="arch-elabel" x="238" y="127">제출 + outbox</text>
+      <text class="arch-elabel" x="238" y="141">같은 DB 트랜잭션</text>
+
+      <!-- 2: DB -> relay (read) -->
+      <path class="arch-edge dashed" d="M398,228 L398,96" marker-end="url(#arr)"/>
+      <text class="arch-elabel" x="406" y="150">outbox 폴링</text>
+
+      <!-- 2: relay -> MQ publish -->
+      <line class="arch-edge hot" x1="462" y1="58" x2="506" y2="58" marker-end="url(#arr-hot)"/>
+      <circle class="arch-step" cx="484" cy="42" r="10"/>
+      <text class="arch-stepnum" x="484" y="45.5" text-anchor="middle">2</text>
+
+      <!-- 3: MQ -> relay confirm -->
+      <line class="arch-edge dashed" x1="506" y1="80" x2="462" y2="80" marker-end="url(#arr)"/>
+      <circle class="arch-step" cx="484" cy="104" r="10"/>
+      <text class="arch-stepnum" x="484" y="107.5" text-anchor="middle">3</text>
+      <text class="arch-elabel" x="484" y="128" text-anchor="middle">publisher confirm</text>
+      <text class="arch-elabel" x="484" y="142" text-anchor="middle">→ PUBLISHED</text>
+
+      <!-- 4: MQ -> consumer -->
+      <line class="arch-edge hot" x1="672" y1="66" x2="716" y2="66" marker-end="url(#arr-hot)"/>
+      <circle class="arch-step" cx="694" cy="48" r="10"/>
+      <text class="arch-stepnum" x="694" y="51.5" text-anchor="middle">4</text>
+
+      <!-- consumer -> judge api -->
+      <path class="arch-edge" d="M776,92 L776,134" marker-end="url(#arr)"/>
+      <text class="arch-elabel" x="786" y="117">채점 호출</text>
+
+      <!-- 5: consumer(judge result) -> DB -->
+      <path class="arch-edge hot" d="M722,166 C620,166 600,180 597,226" marker-end="url(#arr-hot)"/>
+      <circle class="arch-step" cx="640" cy="172" r="10"/>
+      <text class="arch-stepnum" x="640" y="175.5" text-anchor="middle">5</text>
+      <text class="arch-elabel" x="560" y="196" text-anchor="middle">결과 + 스코어보드</text>
+      <text class="arch-elabel" x="560" y="210" text-anchor="middle">outbox 저장 (TX)</text>
+
+      <!-- 6: consumer -> MQ manual ack -->
+      <path class="arch-edge dashed" d="M722,52 C700,20 650,14 618,30" marker-end="url(#arr)"/>
+      <circle class="arch-step" cx="668" cy="18" r="10"/>
+      <text class="arch-stepnum" x="668" y="21.5" text-anchor="middle">6</text>
+      <text class="arch-elabel" x="722" y="16">commit 후 manual ACK</text>
+
+      <!-- 7: DB -> redis -->
+      <line class="arch-edge" x1="594" y1="266" x2="716" y2="266" marker-end="url(#arr)"/>
+      <circle class="arch-step" cx="655" cy="250" r="10"/>
+      <text class="arch-stepnum" x="655" y="253.5" text-anchor="middle">7</text>
+      <text class="arch-elabel" x="655" y="284" text-anchor="middle">outbox → 스코어보드</text>
+    </svg>
+  </div>
+  <p class="diagram-cap">ACK 전에 consumer가 죽으면 메시지는 자동 재전달되고, DB unique constraint가 중복 반영을 막는다.</p>
+
+  <ol class="steps">
+    <li><strong><code>contest_submission</code>과 채점 발행용 outbox를 같은 DB 트랜잭션</strong>으로 저장한다.</li>
+    <li>outbox relay가 <strong>RabbitMQ quorum queue에 메시지를 발행</strong>한다.</li>
+    <li><strong>publisher confirm을 받은 시점</strong>에 outbox를 <code>PUBLISHED</code>로 표시한다 — 완료의 의미는 "채점 완료"가 아니라 <strong>"RabbitMQ가 작업을 인수함"</strong>이다.</li>
+    <li>consumer는 메시지를 받아 직접 <strong>채점 API를 호출</strong>한다.</li>
+    <li>채점 결과와 스코어보드 outbox를 <strong>DB 트랜잭션으로 저장</strong>한다.</li>
+    <li>DB commit이 성공한 후 <strong>manual ACK</strong>를 보낸다.</li>
+    <li>consumer 프로세스나 connection/channel이 ACK 전에 종료되면 <strong>메시지는 다시 전달</strong>된다.</li>
+  </ol>
+
+  <h3>진화 과정 — 6번의 재설계</h3>
+  <div class="timeline">
+
+    <div class="tl-item">
+      <div class="tl-node">V0</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>event + async</h3><span class="badge wa">유실 발생</span></div>
+        <p class="tl-desc">Spring의 event + async 구조. POST 시 DB에 저장하고 이벤트 발행, 리스너가 채점 API를 호출해 결과를 갱신한다.</p>
+        <div class="flow">
+          <span class="fbox">POST</span><span class="arr">→</span>
+          <span class="fbox db">DB insert</span><span class="arr">→</span>
+          <span class="fbox">event</span><span class="arr">→</span>
+          <span class="fbox">listener</span><span class="arr">→</span>
+          <span class="fbox">채점 API</span><span class="arr">→</span>
+          <span class="fbox db">UPDATE</span>
+        </div>
+        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
+          <li>중간 프로세스가 죽으면 제출이 유실된다 — 요구사항 ① 위반.</li>
+          <li>고부하에서 쓰루풋이 낮다.</li>
+        </ul></dd></dl>
+      </div>
+    </div>
+
+    <div class="tl-item">
+      <div class="tl-node">V1</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>JPA batch insert</h3><span class="badge rt">부분 개선</span></div>
+        <p class="tl-desc">insert를 큐에 모아 같은 EntityManager에서 persist — MySQL batch rewrite를 활용해 POST 반환까지의 쓰루풋을 개선했다.</p>
+        <div class="flow">
+          <span class="fbox">POST</span><span class="arr">→</span>
+          <span class="fbox hot">in-mem queue</span><span class="arr">→</span>
+          <span class="fbox db">batch persist</span><span class="arr">→</span>
+          <span class="fbox">채점 API</span><span class="arr">→</span>
+          <span class="fbox db">UPDATE</span>
+        </div>
+        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
+          <li>레이턴시 증가. batch 내 한 건 실패 시 포함된 insert 전체가 실패.</li>
+          <li>채점 구간은 여전히 느리다.</li>
+        </ul></dd></dl>
+      </div>
+    </div>
+
+    <div class="tl-item">
+      <div class="tl-node">V2</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>judge one transaction</h3><span class="badge wa">지연 전파</span></div>
+        <p class="tl-desc">채점 쓰루풋 개선을 위해 한 트랜잭션에서 <code>SKIP LOCKED</code>로 여러 건을 읽고, 스레드풀에서 API 호출 후 한 번에 insert.</p>
+        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
+          <li>트랜잭션 범위가 너무 크다.</li>
+          <li>가끔 오는 p999(2초) 제출 하나가 <strong>트랜잭션에 묶인 전체 batch에 지연을 전파</strong>한다.</li>
+        </ul></dd></dl>
+      </div>
+    </div>
+
+    <div class="tl-item">
+      <div class="tl-node">V3</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>judge claim</h3><span class="badge rt">1차 채택 → 한계</span></div>
+        <p class="tl-desc">
+          submission과 result 테이블을 분리하고 과정 사이에 큐를 넣어 트랜잭션을 짧게 유지. p999 지연이 다른 제출로 퍼지지 않는다.
+          복구·중복 방지를 위해 claim 칼럼(<code>claim_key</code>, <code>claimed_at</code>, <code>status</code>)을 두고,
+          오래된 미완료 claim은 sweeper가 다시 큐에 넣는다.
+        </p>
+        <div class="flow">
+          <span class="fbox db">claim UPDATE</span><span class="arr">→</span>
+          <span class="fbox hot">queue</span><span class="arr">→</span>
+          <span class="fbox">채점 API</span><span class="arr">→</span>
+          <span class="fbox hot">queue</span><span class="arr">→</span>
+          <span class="fbox db">result batch insert</span>
+        </div>
+        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
+          <li>p999가 평균의 200배인 상황에서 <code>claimed_at</code> 기반 실패 판단은 딜레마다 —
+            <strong>timeout을 짧게 잡으면 중복 채점이 늘고, 길게 잡으면 장애 복구가 늦어진다.</strong></li>
+        </ul></dd></dl>
+      </div>
+    </div>
+
+    <div class="tl-item">
+      <div class="tl-node">V4</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>DB outbox + Kafka</h3><span class="badge wa">복잡도 초과</span></div>
+        <p class="tl-desc">
+          append-only log처럼 쓰이는 submission에 Kafka를 도입. claim이 시간 변동이 큰 채점 API 앞이 아니라
+          Kafka로 보내는 짧은 구간 앞으로 이동해 timeout 설정이 수월해졌다. 유니크 제약 보장을 위해 DB 저장은 유지.
+        </p>
+        <div class="flow">
+          <span class="fbox db">DB insert</span><span class="arr">→</span>
+          <span class="fbox db">claim</span><span class="arr">→</span>
+          <span class="fbox q">Kafka</span><span class="arr">→</span>
+          <span class="fbox">채점 API</span><span class="arr">→</span>
+          <span class="fbox db">result</span><span class="arr">→</span>
+          <span class="fbox q">offset commit 관리</span>
+        </div>
+        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
+          <li>같은 partition 앞쪽의 느린 작업이 뒤 작업의 commit을 막는다 — 완료 offset을 별도 저장하고
+            연속 완료 지점을 계산하는 <strong>수동 commit 관리</strong>가 필요했다.</li>
+          <li>DB claim과 offset commit을 함께 관리하며 코드 복잡도가 크게 상승, 채점 쓰루풋도 감소.</li>
+        </ul></dd></dl>
+      </div>
+    </div>
+
+    <div class="tl-item final">
+      <div class="tl-node">V5</div>
+      <div class="tl-card">
+        <div class="tl-head"><h3>RabbitMQ 작업 큐</h3><span class="badge ac">ACCEPTED</span></div>
+        <p class="tl-desc">
+          채점은 과거 이벤트를 여러 consumer가 재생하는 <strong>스트림이 아니라</strong>, 하나의 작업을 하나의 worker가
+          가져가 처리하고 성공 여부를 개별적으로 알리는 <strong>작업 큐</strong>다. 일부 채점만 최대 2초까지 느려질 수 있으므로,
+          완료 순서가 달라져도 각각 독립적으로 완료 처리할 수 있어야 한다.
+        </p>
+        <p class="tl-desc">
+          Kafka Share는 레코드별 ACK와 재전달로 이 문제를 상당 부분 해소하지만, 현 프로젝트는 replay·다중
+          consumer group·장기 로그 보존을 쓰지 않는데 새 Kafka/Spring Kafka 버전 도입과 운영 비용이 붙는다.
+          RabbitMQ는 <strong>메시지별 ACK, prefetch, consumer 간 작업 분배가 기본 모델</strong>이라 현재 채점
+          작업과 더 직접적으로 맞았다.
+        </p>
+
+        <h4>중복 처리 — at-least-once + 멱등</h4>
+        <p class="tl-desc">DB 저장 성공 직후 ACK 전 장애가 나면 메시지는 다시 전달된다. exactly-once를 기대하지 않고 멱등 처리로 흡수한다.</p>
+        <ul>
+          <li><code>submissionId + judgeVersion</code>에 <strong>unique constraint</strong></li>
+          <li>이미 결과가 존재하면 재저장하지 않음</li>
+          <li>같은 채점이 진행 중이면 기존 실행 결과를 기다리거나 재사용</li>
+          <li>재채점은 별도의 <code>judgeRunId</code>로 구분</li>
+        </ul>
+
+        <h4>영속성</h4>
+        <ul>
+          <li>durable quorum queue + persistent message — <strong>과반 replica 복제 후 confirm 반환</strong></li>
+          <li>publisher confirm + consumer manual ACK</li>
+          <li>3개 이상의 서로 다른 RabbitMQ 노드</li>
+        </ul>
+
+        <h4>재시도와 복구</h4>
+        <ul>
+          <li>일시적 채점 서버 오류는 <strong>지연 후 재시도</strong>, 반복 실패는 <strong>DLQ</strong>로 — 같은 queue 즉시 재투입으로 인한 retry loop 차단</li>
+          <li>대회 재채점은 별도 queue/worker capacity 사용</li>
+          <li>완료 판단은 "queue가 비었는가"가 아니라 DB의 <code>rejudge_run</code> 전체 대상 대비 완료 수로</li>
+        </ul>
+
+        <h4>트레이드오프</h4>
+        <p class="tl-desc">
+          RabbitMQ는 Kafka보다 producer batching, 압축, 대규모 backlog와 replay에 불리하고, quorum queue +
+          publisher confirm은 복제·디스크 기록 비용으로 처리량이 감소한다. 하지만 이 시스템의 병목은 브로커가 아니라
+          <strong>평균 10ms, 최대 2초의 채점 API</strong>다. 느린 채점이 다른 작업에 지연을 전파하지 않고, 실패한 작업을
+          단순하게 재분배할 수 있는지가 더 중요했다. 그 대가로 claim의 heartbeat/sweeper와 Kafka offset commit 관리가
+          사라지고, RabbitMQ cluster 운영·DLQ 관리·멱등 처리 책임이 생겼다.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <h3>결정 요약</h3>
+  <p>
+    <strong>DB-only 구조(V3)</strong>는 별도 인프라 없이 batch 성능이 좋았지만 claim, heartbeat, sweeper를 직접
+    구현해야 했고, 채점 지연 편차가 커서 stale claim timeout을 짧게 잡으면 중복 채점이 늘고 길게 잡으면 복구가
+    늦어졌다. <strong>DB outbox + Kafka(V4)</strong>는 높은 처리량과 replay가 가능했지만 완료 순서가 뒤섞인
+    offset commit을 직접 관리해야 했고, 현 시스템에서는 Kafka 로그의 장점보다 복잡성 증가가 더 컸다.
+  </p>
+  <p>
+    최종적으로 <strong>DB를 제출과 결과의 원본으로 유지</strong>하고, RabbitMQ quorum queue가 채점 작업의
+    분배와 in-flight 상태를 관리하도록 역할을 나눴다.
+  </p>
+  <div class="roles">
+    <div class="role r-db">
+      <div class="rname">MySQL</div>
+      <div class="rdesc">제출, 결과, unique constraint, 재채점 진행 상태 — 정합성의 원본</div>
+    </div>
+    <div class="role r-mq">
+      <div class="rname">RabbitMQ</div>
+      <div class="rdesc">작업 분배, backpressure, 미완료 작업 재전달</div>
+    </div>
+    <div class="role r-redis">
+      <div class="rname">Redis</div>
+      <div class="rdesc">스코어보드와 채점 결과 캐시</div>
+    </div>
+    <div class="role r-outbox">
+      <div class="rname">Outbox</div>
+      <div class="rdesc">DB 저장과 RabbitMQ 발행 사이의 유실 방지</div>
+    </div>
+  </div>
+  <div class="callout">
+    <p>DB의 정합성과 RabbitMQ의 작업 큐 모델을 결합해, 기존 claim/heartbeat/sweeper와
+    Kafka의 연속 offset commit 관리를 모두 제거했다.</p>
+  </div>
+  <hr class="sep">
+</section>
+
+<!-- ================= 02 DEADLOCK ================= -->
+<section id="deadlock">
+  <div class="sec-head">
+    <span class="sec-num mono">02</span>
+    <h2>데드락 해결 과정</h2>
+  </div>
+  <p class="sec-sub">
+    대회 입력 → 최종화 실행, 대회 중 일반 제출 병행, 스케일 아웃을 겹쳐 돌리자 데드락이 발생했다.
+    외래키 제거와 데이터 접근 순서 정렬만으로는 해결되지 않는 케이스가 있었고, 세 단계에 걸쳐 잡았다.
+  </p>
+
+  <h3>Case 1 — REPEATABLE READ → READ COMMITTED</h3>
+  <pre><code><span class="cm">-- claim: id 증가 방향으로 gap 락 → 레코드 락</span>
+<span class="kw">UPDATE</span> contest_submission
+<span class="kw">SET</span> judge_status = <span class="str">'PROCESSING'</span>
+<span class="kw">WHERE</span> judge_status = <span class="str">'PENDING'</span>
+<span class="kw">ORDER BY</span> id <span class="kw">LIMIT</span> 100;
+
+<span class="cm">-- insert: 반대로 레코드 락 이전에 gap 락</span>
+<span class="kw">INSERT INTO</span> contest_submission (..., judge_status=<span class="str">'PENDING'</span>, ...) <span class="kw">VALUES</span> (...);</code></pre>
+  <div class="lockviz">
+    <div class="tx">
+      <div class="txname">TX A · claim UPDATE</div>
+      <div class="lock-chain">
+        <span class="lk held">gap lock (id↑)</span><span style="color:var(--muted)">→</span><span class="lk wait">record lock</span>
+      </div>
+    </div>
+    <div class="vs">⇄ 교차 대기</div>
+    <div class="tx">
+      <div class="txname">TX B · INSERT</div>
+      <div class="lock-chain">
+        <span class="lk held">record lock</span><span style="color:var(--muted)">→</span><span class="lk wait">gap lock</span>
+      </div>
+    </div>
+    <div class="cap">실선 = 보유한 락, 점선 = 대기 중인 락. 1씩 증가하는 키를 썼는데도 실제로는 claim 쪽이 더 큰 id의 락을 잡고 있었다.</div>
+  </div>
+  <p>
+    고려하지 못한 순서 변동과 InnoDB 내부 락 순서가 겹쳐 데드락이 났다.
+    격리 수준을 <strong>READ COMMITTED로 변경</strong>해 claim UPDATE가 gap 락을 잡지 않게 했다.
+  </p>
+
+  <h3>Case 2 — UPDATE WHERE … → SELECT FOR UPDATE + UPDATE BY id</h3>
+  <pre><code><span class="cm">-- 오래 처리되지 못한 submission 복구</span>
+<span class="kw">UPDATE</span> contest_submission
+<span class="kw">SET</span> judge_status = <span class="str">'PENDING'</span>
+<span class="kw">WHERE</span> judge_status = <span class="str">'PROCESSING'</span> <span class="kw">AND</span> judge_claimed_at &lt; ?
+<span class="kw">ORDER BY</span> judge_claimed_at, id <span class="kw">LIMIT</span> ?;
+
+<span class="cm">-- 처리 완료 기록</span>
+<span class="kw">UPDATE</span> contest_submission
+<span class="kw">SET</span> judge_status = <span class="str">'DONE'</span>
+<span class="kw">WHERE</span> id = ? <span class="kw">AND</span> judge_status = <span class="str">'PROCESSING'</span> <span class="kw">AND</span> judge_claim_token = ?;</code></pre>
+  <p>
+    row 순서를 <code>ORDER BY</code>에 맞춰 정렬하면 해결될 것으로 봤지만, 실제로는 한쪽은
+    <strong>secondary index부터</strong>, 다른 쪽은 <strong>primary key부터</strong> 락을 타면서 데드락이 계속됐다.
+    그래서 바로 UPDATE하지 않고 두 단계로 나눴다.
+  </p>
+  <ul>
+    <li><code>SELECT … FOR UPDATE SKIP LOCKED</code>로 대상 id를 먼저 고른 뒤</li>
+    <li>양쪽 모두 <strong>id 기반 UPDATE</strong>를 수행</li>
+  </ul>
+
+  <h3>Case 3 — 인덱스 제거</h3>
+  <p>
+    그런데도 <code>SELECT FOR UPDATE SKIP LOCKED</code> 뒤의 UPDATE에서 데드락이 다시 터졌다.
+    UPDATE가 수정하는 secondary index에 락이 일시적으로 걸렸다 풀리는데, 이것이 다른 row 수정과 교차했다 —
+    한쪽은 <code>(status, claimed_at, id)</code>를 잡고 <code>(status, id)</code>를 기다리고, 다른 쪽은 반대였다.
+    현재 쿼리 패턴에서는 <code>(status, claimed_at, id)</code>만으로 충분했기에 <strong><code>(status, id)</code>
+    인덱스를 제거</strong>하고 로직을 정리해 해결했다.
+  </p>
+  <div class="callout">
+    <p><strong>교훈</strong> — MySQL InnoDB에서는 예상하기 어려운 데드락이 쉽게 발생한다.
+    락 순서를 코드 레벨에서 맞추는 것만으로는 부족하며, 인덱스 락 경로까지 확인하고
+    데드락이 나더라도 회복 가능한 구조(재시도, 멱등)를 함께 설계해야 한다.</p>
+  </div>
+  <hr class="sep">
+</section>
+
+<!-- ================= 03 SCOREBOARD ================= -->
+<section id="scoreboard">
+  <div class="sec-head">
+    <span class="sec-num mono">03</span>
+    <h2>스코어보드 회복</h2>
+  </div>
+  <p class="sec-sub">
+    스코어보드는 대회 중 빠른 제공을 위해 Redis 위에 올렸다(데이터 구조가 DB에 부적합).
+    문제는 Redis 유실 시의 복구다 — snapshot 복구를 전제하면, outbox id는 중간에 빈 숫자가 있을 수 있고
+    도착 순서도 id와 다를 수 있어 <strong>어떤 outbox가 도착하지 않았는지 사전에 알 수 없다.</strong>
+    go-back-N 같은 복구가 불가능한 상황.
+  </p>
+
+  <div class="duo">
+    <div class="opt-card picked">
+      <h4>Redis seq <span class="badge ac">ACCEPTED</span></h4>
+      <p>Redis가 1씩 증가하는 seq를 발급·저장한다. 이미 본 제출이면 기존 seq를 반환, 처음이면 새로 발급.
+         이 seq를 outbox에도 기록한다.</p>
+      <p>Redis가 과거 snapshot으로 복구되면 <strong>같은 seq가 재발급</strong>되고, outbox에서 seq 중복으로
+         이를 감지할 수 있다. 주기적으로 중복을 검사해 재시도하면 자동 복구된다.</p>
+      <span class="lbl good">PROS</span>
+      <ul><li>Redis에 상태를 묻는 과정 없이 outbox 갱신만으로 회복</li></ul>
+      <span class="lbl bad">CONS</span>
+      <ul><li>복구가 새 submission 제출(트래픽)에 직접적으로 의존</li></ul>
+    </div>
+    <div class="opt-card">
+      <h4>Gapless seq <span class="badge rt">REJECTED</span></h4>
+      <p>빈틈없는 seq를 생성하면 어떤 outbox가 누락됐는지 알 수 있고, Redis가 처리한 seq 목록을
+         유지하면 복구 가능. Kafka 같은 append log 기반 저장소면 파티션 내 gapless 발급이 쉽다.</p>
+      <span class="lbl good">PROS</span>
+      <ul><li>복구에 트래픽이 필요 없음</li></ul>
+      <span class="lbl bad">CONS</span>
+      <ul>
+        <li>이것만을 위해 Kafka를 도입하기 어려움</li>
+        <li>DB에서 gapless 유지는 seq 발급 구간의 직렬화 필요</li>
+        <li>복구를 여러 서버에서 돌리기 어려움</li>
+      </ul>
+    </div>
+  </div>
+  <p>
+    DB만 사용하는 현 구성에서 gapless seq의 직렬화 비용이 우려되어 <strong>Redis seq를 선택</strong>했다.
+    대회 종료 시점에는 한 번 더 대사(reconciliation)를 돌려 최종 정합성을 확보한다.
+  </p>
+  <hr class="sep">
+</section>
+
+<!-- ================= 04 RANKING ================= -->
+<section id="ranking">
+  <div class="sec-head">
+    <span class="sec-num mono">04</span>
+    <h2>랭킹 조회 개선</h2>
+  </div>
+  <p class="sec-sub">
+    사용자는 랭킹 페이지에서 자기 위치를 확인하고, 자신이 포함된 페이지로 바로 이동할 수 있어야 한다.
+    <code>ORDER BY … LIMIT :offset, :limit</code>은 정렬 인덱스를 타더라도 깊은 페이지에서 앞의 row를
+    전부 읽고 버려야 한다.
+  </p>
+
+  <div class="duo">
+    <div class="opt-card">
+      <h4>solved — bucket 집계 <span class="badge ac">계산형</span></h4>
+      <p><code>solved_count_bucket</code> 테이블에 [푼 문제 수 n, 해당 count의 유저 수, 그보다 큰 유저 수]를 유지한다.</p>
+      <ul>
+        <li>내 solved count → bucket에서 상위 유저 수 조회</li>
+        <li>같은 count 내 내 순번 계산 → 합산해 rank 산출</li>
+        <li>rank가 속한 page start 계산 → 해당 구간만 읽기</li>
+      </ul>
+      <p><code>solved_count</code>가 <strong>1씩 증가만</strong> 하기 때문에 가능한 구조 —
+      전체 재정렬 없이 작은 bucket 테이블만으로 rank를 계산한다.
+      단, 성능이 유저 수만이 아니라 <strong>값의 분포</strong>에 좌우된다.</p>
+    </div>
+    <div class="opt-card">
+      <h4>current streak — snapshot <span class="badge ac">사전계산형</span></h4>
+      <p>자정 배치가 전날 활동으로 streak를 갱신한 뒤, 0이 아닌 유저만 모아
+      <code>user_streak_rank_snapshot</code>을 만든다. rank가 이미 저장되어 있다.</p>
+      <ul>
+        <li>snapshot에서 내 row와 <code>snapshot_rank</code>를 바로 읽기</li>
+        <li><code>snapshot_rank BETWEEN start AND end</code>로 페이지 조회</li>
+      </ul>
+      <p>조회 시점에 rank를 <strong>계산하는 것이 아니라 읽기만</strong> 하는 구조.
+      streak는 매일 바뀌므로 일 단위 snapshot과 자연스럽게 맞는다.</p>
+    </div>
+  </div>
+
+  <h3>벤치마크</h3>
+  <p>각 랭크 타입에서 앞/중간/뒤 3개 지점의 한 페이지씩 조회했다.
+     current streak는 100K행 snapshot, solved는 8M+행 테이블 기준.</p>
+
+  <div class="bench">
+    <div class="bench-title">깊은 페이지 조회 레이턴시</div>
+    <div class="bench-sub">가로축 로그 스케일 · 값은 ms · 막대에 hover하면 강조</div>
+    <div class="legend">
+      <span class="li"><span class="sw naive"></span>naive (OFFSET)</span>
+      <span class="li"><span class="sw opt"></span>optimized</span>
+    </div>
+
+    <div class="bench-group">
+      <div class="bg-name">current streak <small>— snapshot 방식 · 위치 101 / 49,601 / 99,301</small></div>
+      <div class="brow">
+        <div class="pos">Front</div>
+        <div class="bars">
+          <div class="barline" title="naive 161 ms"><div class="bar naive" style="width:49.3%"></div><span class="bval">161 ms</span></div>
+          <div class="barline" title="optimized 0.586 ms"><div class="bar opt" style="width:11.8%"></div><span class="bval">0.586 ms</span><span class="speed">275× 빠름</span></div>
+        </div>
+      </div>
+      <div class="brow">
+        <div class="pos">Middle</div>
+        <div class="bars">
+          <div class="barline" title="naive 8,890 ms"><div class="bar naive" style="width:76.1%"></div><span class="bval">8,890 ms</span></div>
+          <div class="barline" title="optimized 0.443 ms"><div class="bar opt" style="width:9.9%"></div><span class="bval">0.443 ms</span><span class="speed">20,068× 빠름</span></div>
+        </div>
+      </div>
+      <div class="brow">
+        <div class="pos">Back</div>
+        <div class="bars">
+          <div class="barline" title="naive 14,382 ms"><div class="bar naive" style="width:79.4%"></div><span class="bval">14,382 ms</span></div>
+          <div class="barline" title="optimized 0.113 ms"><div class="bar opt" style="width:2%"></div><span class="bval">0.113 ms</span><span class="speed">127,274× 빠름</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bench-group">
+      <div class="bg-name">solved <small>— bucket 방식 · 위치 101 / 4,000,501 / 8,000,901</small></div>
+      <div class="brow">
+        <div class="pos">Front</div>
+        <div class="bars">
+          <div class="barline" title="naive 19.1 ms"><div class="bar naive" style="width:35.1%"></div><span class="bval">19.1 ms</span></div>
+          <div class="barline" title="optimized 24.2 ms"><div class="bar opt" style="width:36.7%"></div><span class="bval">24.2 ms</span><span class="speed neg">0.8× (동급)</span></div>
+        </div>
+      </div>
+      <div class="brow">
+        <div class="pos">Middle</div>
+        <div class="bars">
+          <div class="barline" title="naive 217,842 ms"><div class="bar naive" style="width:97.5%"></div><span class="bval">217,842 ms</span></div>
+          <div class="barline" title="optimized 369 ms"><div class="bar opt" style="width:54.9%"></div><span class="bval">369 ms</span><span class="speed">590× 빠름</span></div>
+        </div>
+      </div>
+      <div class="brow">
+        <div class="pos">Back</div>
+        <div class="bars">
+          <div class="barline" title="naive 233,231 ms"><div class="bar naive" style="width:98%"></div><span class="bval">233,231 ms</span></div>
+          <div class="barline" title="optimized 47,747 ms"><div class="bar opt" style="width:87.4%"></div><span class="bval">47,747 ms</span><span class="speed">4.9× 빠름</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="bench-axis mono">log scale — 0.1ms ─ 10ms ─ 1s ─ 100s</div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Rank type</th><th>Front</th><th>Middle</th><th>Back</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>current streak · naive</td><td><span class="mono">161 ms</span></td><td><span class="mono">8,890 ms</span></td><td><span class="mono">14,382 ms</span></td></tr>
+        <tr><td>current streak · optimized</td><td><span class="mono">0.586 ms</span></td><td><span class="mono">0.443 ms</span></td><td><span class="mono">0.113 ms</span></td></tr>
+        <tr><td>solved · naive</td><td><span class="mono">19.1 ms</span></td><td><span class="mono">217,842 ms</span></td><td><span class="mono">233,231 ms</span></td></tr>
+        <tr><td>solved · optimized</td><td><span class="mono">24.2 ms</span></td><td><span class="mono">369 ms</span></td><td><span class="mono">47,747 ms</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    bucket 방식의 성능은 값의 분포에 좌우된다 — 8M 유저에서 back 지점은 같은 solved count 구간이 넓어
+    47초까지 늘어나지만, <strong>10만 유저 데이터셋에서는 같은 deep page fetch가 약 0.46ms</strong>로
+    충분히 실용적이었다. 규모와 분포에 따라 snapshot 방식과의 선택이 갈린다.
+  </p>
+</section>
+
+</main>
+
+<footer class="wrap">
+  <span>온라인 저지 채점 파이프라인 — 설계 포트폴리오</span>
+  <span class="mono">Java · Spring · MySQL · Redis · RabbitMQ</span>
+</footer>
+</body>
+</html>
