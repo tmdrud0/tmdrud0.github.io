@@ -1,0 +1,1093 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>부하·회복 측정 기록 · 신승경</title>
+<meta name="description" content="포트폴리오 본문 수치의 출처 — 측정 환경 기준선, 런별 조건과 원자료, 적체·복구 그래프, 관측·테스트 범위, 폐기한 실행과 그 이유.">
+<meta name="author" content="신승경">
+<meta property="og:type" content="website">
+<meta property="og:title" content="부하·회복 측정 기록 · 신승경">
+<meta property="og:description" content="포트폴리오 본문 수치의 출처 — 측정 환경 기준선, 런별 조건과 원자료, 적체·복구 그래프, 관측·테스트 범위, 폐기한 실행과 그 이유.">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='17' font-weight='700' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div id="progress" aria-hidden="true"></div>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="subpage-head">
+  <div class="inner">
+    <a class="back" href="index.html">← 신승경 · 백엔드 포트폴리오</a>
+    <h1>부하·회복 측정 기록</h1>
+    <p><a href="index.html">포트폴리오 본문</a>의 수치가 어디서 나왔는지를 남긴 문서다.
+그림은 전부 <code>var/loadtest-*/</code>의 원자료에서 <code>make-charts.py</code>로 다시 만들 수 있다.
+코드는 <a href="https://github.com/tmdrud0/web">github.com/tmdrud0/web</a>.</p>
+  </div>
+</header>
+<div class="shell">
+<nav class="toc" aria-label="목차">
+<h2>목차</h2>
+<ol>
+<li><a href="#1-이-수치들이-설명하지-않는-것">1. 이 수치들이 설명하지 않는 것</a>
+</li>
+<li><a href="#2-측정-환경-기준선">2. 측정 환경 기준선</a>
+</li>
+<li><a href="#3-채점-부하-모델">3. 채점 부하 모델</a>
+</li>
+<li><a href="#4-런-목록">4. 런 목록</a>
+</li>
+<li><a href="#5-단계별-적체와-배수">5. 단계별 적체와 배수</a>
+</li>
+<li><a href="#6-노드-사망과-회수">6. 노드 사망과 회수</a>
+</li>
+<li><a href="#7-prefetch-별-consumer-로컬-버퍼">7. prefetch 별 consumer 로컬 버퍼</a>
+</li>
+<li><a href="#8-스코어보드-복구-실험">8. 스코어보드 복구 실험</a>
+</li>
+<li><a href="#9-무엇을-보면-이-시스템이-아픈가">9. 무엇을 보면 이 시스템이 아픈가</a>
+</li>
+<li><a href="#10-테스트">10. 테스트</a>
+</li>
+<li><a href="#11-폐기한-실행과-그-이유">11. 폐기한 실행과 그 이유</a>
+</li>
+<li><a href="#12-재현">12. 재현</a>
+</li>
+</ol>
+<div class="foot"><a href="index.html">← 본문으로</a></div>
+</nav>
+<main class="doc subpage" id="main">
+<h2 id="1-이-수치들이-설명하지-않는-것">1. 이 수치들이 설명하지 않는 것</h2>
+<ul>
+<li><strong>단일 호스트다.</strong> Ryzen 5 5600(6코어 / 12스레드)의 WSL 예산 12 vCPU 안에서 web·judge·
+  MySQL·RabbitMQ·Redis가 상한을 나눠 쓴다. Gatling은 Windows 쪽에서 돌아 같은 물리 코어를 두고
+  그 VM과 경쟁한다. <strong>절대 처리량을 용량 수치로 쓰지 않는 이유가 이것이다.</strong></li>
+<li><strong>채점이 <code>Thread.sleep</code>이다.</strong> judge 노드가 외부 채점 서버를 호출하고 기다리는 구조라 블로킹
+  시간의 대용으로는 타당하지만, 커넥션 풀 고갈·타임아웃·부분 실패를 모델링하지 않는다.</li>
+<li><strong>닫힌 부하 모델이다.</strong> 가상 사용자가 직전 응답을 기다리므로 서버가 느려지면 부하가 저절로
+  줄어든다. 실제 장애 때의 재시도 증폭을 재현하지 못한다.</li>
+<li><strong>네트워크 지연이 0이다.</strong> 전부 loopback이다.</li>
+<li><strong><code>submit-*</code> 시나리오에는 조회 부하가 없다.</strong> 유입 상한과 백로그 수치는 제출만 들어오는 조건에서
+  나온 값이다. 실제 대회에서는 참가자가 순위를 계속 새로고침하므로 조회가 제출보다 많다.
+  제출과 조회가 겹치는 조건은 <code>mixed-target</code>으로 따로 쟀고 §7.1에 있다.</li>
+</ul>
+<p>따라서 모든 비교는 <strong>같은 환경의 짝실험</strong>으로 설계했고, 방향을 뒤집어 재현해 워밍업 교란을 배제했다.
+읽을 때도 절대 성능이 아니라 <em>구조가 어디서 막히는가</em>의 증거로 읽어야 한다.</p>
+<h2 id="2-측정-환경-기준선">2. 측정 환경 기준선</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>CPU</td>
+<td>AMD Ryzen 5 5600 — 6 cores / 12 logical</td>
+</tr>
+<tr>
+<td>RAM</td>
+<td>15.91 GiB</td>
+</tr>
+<tr>
+<td>WSL 2 예산</td>
+<td>12 vCPU / 14 GB / swap 0</td>
+</tr>
+<tr>
+<td>Docker</td>
+<td>Desktop 4.82.0, Engine 29.6.1</td>
+</tr>
+</tbody>
+</table></div>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>서비스</th>
+<th style="text-align: right;">수</th>
+<th style="text-align: right;">CPU</th>
+<th style="text-align: right;">메모리</th>
+<th>JVM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>web</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">1280M</td>
+<td><code>MaxRAMPercentage=60</code></td>
+</tr>
+<tr>
+<td>judge</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">0.75</td>
+<td style="text-align: right;">768M</td>
+<td><code>MaxRAMPercentage=60</code></td>
+</tr>
+<tr>
+<td>batch</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.5</td>
+<td style="text-align: right;">1024M</td>
+<td><code>MaxRAMPercentage=60</code></td>
+</tr>
+<tr>
+<td>mysql</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">2560M</td>
+<td></td>
+</tr>
+<tr>
+<td>redis</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.5</td>
+<td style="text-align: right;">512M</td>
+<td></td>
+</tr>
+<tr>
+<td>rabbitmq</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.75</td>
+<td style="text-align: right;">1024M</td>
+<td></td>
+</tr>
+<tr>
+<td>nginx</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.25</td>
+<td style="text-align: right;">128M</td>
+<td></td>
+</tr>
+<tr>
+<td><strong>앱 합계</strong></td>
+<td style="text-align: right;"><strong>9</strong></td>
+<td style="text-align: right;"><strong>7.5</strong></td>
+<td style="text-align: right;"><strong>9344M</strong></td>
+<td>WSL 예산 안</td>
+</tr>
+<tr>
+<td>관측 스택</td>
+<td style="text-align: right;">7</td>
+<td style="text-align: right;">2.2</td>
+<td style="text-align: right;">2112M</td>
+<td>함께 띄울 때</td>
+</tr>
+</tbody>
+</table></div>
+<p>컨테이너 상한은 예약이 아니라 상한이다. WSL 예산이 총합을 덮는 한 관측 스택이 앱의 자원을 빼앗지
+않으므로 앱 상한은 관측 스택 도입 전후로 같게 유지했다. 다만 스크레이프 직렬화 비용과 Prometheus
+TSDB가 MySQL과 공유하는 디스크 I/O는 앱 예산 안에서 발생한다.</p>
+<p>주요 설정: MySQL <code>innodb_buffer_pool_size=1536M</code> / <code>max_connections=500</code>, Redis <code>maxmemory=384mb</code>,
+<code>maxmemory-policy=noeviction</code>(스코어보드 파생 상태를 조용히 지우지 않고 메모리 부족을 오류로 노출).
+Snowflake worker ID는 <code>web-1=1</code>, <code>web-2=2</code>, <code>batch-1=100</code>, <code>judge-1=200</code>, <code>judge-2=201</code>로 인스턴스마다
+고유하다.</p>
+<p>버전: Java 17(<code>eclipse-temurin:17-jre</code>), Spring Boot 3.4.3, MySQL 8.0, Redis 7-alpine,
+RabbitMQ 4.1-management, Nginx 1.27-alpine, Gatling 3.10.5, Gradle 8.12.1.</p>
+<h2 id="3-채점-부하-모델">3. 채점 부하 모델</h2>
+<p><strong>슬롯 32개</strong> — judge 노드당 리스너 16, 두 노드. 성능을 맞추려고 고른 값이 아니다.</p>
+<ul>
+<li><strong>컨테이너.</strong> 스레드당 예약 스택 1MB면 64개는 JVM 자체 사용량과 768M 상한 사이에 남는 약 140M을
+  거의 다 먹는다. <strong>이 노드는 실제로 OOM으로 세 번 죽었다.</strong></li>
+<li><strong>가정.</strong> 64로 두면 두 노드 합쳐 채점 서버에 동시 128 호출을 넣겠다는 뜻인데, 그런 채점 팜은
+  재본 적이 없다. 16은 <code>prefetch=1</code>이 주는 격리를 유지하면서 아무도 측정하지 않은 용량을 주장하지
+  않는 값이다.</li>
+<li><code>Thread.sleep</code>은 CPU를 쓰지 않으므로 슬롯을 늘리면 처리량이 공짜로 올라간다. 실제 채점은 코어에
+  묶이므로 그 이득은 재현되지 않는다. <strong>슬롯 수는 이 모델이 유효한 범위이기도 하다.</strong></li>
+</ul>
+<p>근거는 <code>src/main/resources/application-judge-role.properties</code>의 주석에 그대로 있다.</p>
+<p><strong>서비스 시간</strong> — 기본 50ms, 5%가 2초 → 평균 147.5ms. 설계 전제(평균 10ms, 1%가 2초)보다 의도적으로
+무겁게 잡았다. 채점이 파이프라인의 상한이 되는 형태를 만들어야 유입과 채점의 격차를 outbox가
+흡수하는 과정을 볼 수 있기 때문이다. 주입은 <code>JUDGE_LATENCY_ENABLED</code> / <code>JUDGE_BASE_MILLIS</code> /
+<code>JUDGE_SLOW_RATIO</code> / <code>JUDGE_SLOW_MILLIS</code>로 런마다 지정한다.</p>
+<h2 id="4-런-목록">4. 런 목록</h2>
+<p>본문에 쓰인 것만 추렸다. <code>req</code>는 HTTP 요청 수, <code>results</code>는 중복 제거 후 채점된 건수다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>런</th>
+<th>시나리오</th>
+<th>조건</th>
+<th style="text-align: right;">req</th>
+<th style="text-align: right;">results</th>
+<th style="text-align: right;">ready 피크</th>
+<th style="text-align: right;">unacked 피크</th>
+<th>쓰인 곳</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>20260808-104446</code></td>
+<td>submit-1000</td>
+<td>150초 주입</td>
+<td style="text-align: right;">133,935</td>
+<td style="text-align: right;">127,687</td>
+<td style="text-align: right;"><strong>94,211</strong></td>
+<td style="text-align: right;">32</td>
+<td>백로그·배수</td>
+</tr>
+<tr>
+<td><code>20260808-092647</code></td>
+<td>submit-139</td>
+<td><code>prefetch=1</code></td>
+<td style="text-align: right;">31,848</td>
+<td style="text-align: right;">27,010</td>
+<td style="text-align: right;">87</td>
+<td style="text-align: right;"><strong>32</strong></td>
+<td>prefetch</td>
+</tr>
+<tr>
+<td><code>20260808-094634</code></td>
+<td>submit-139</td>
+<td><code>prefetch=4</code></td>
+<td style="text-align: right;">31,930</td>
+<td style="text-align: right;">27,077</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;"><strong>112</strong></td>
+<td>prefetch</td>
+</tr>
+<tr>
+<td><code>20260808-093145</code></td>
+<td>submit-139</td>
+<td><code>prefetch=64</code></td>
+<td style="text-align: right;">31,952</td>
+<td style="text-align: right;">27,100</td>
+<td style="text-align: right;">109</td>
+<td style="text-align: right;"><strong>326</strong></td>
+<td>prefetch</td>
+</tr>
+<tr>
+<td><code>20260808-095107</code></td>
+<td>submit-139</td>
+<td><code>prefetch=1</code> 재현</td>
+<td style="text-align: right;">31,931</td>
+<td style="text-align: right;">27,089</td>
+<td style="text-align: right;">42</td>
+<td style="text-align: right;">32</td>
+<td>순서 뒤집기</td>
+</tr>
+<tr>
+<td><code>20260808-094207</code></td>
+<td>submit-139</td>
+<td><code>prefetch=64</code> 재현</td>
+<td style="text-align: right;">31,981</td>
+<td style="text-align: right;">27,128</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">410</td>
+<td>순서 뒤집기</td>
+</tr>
+<tr>
+<td><code>20260808-114654</code></td>
+<td>submit-100</td>
+<td>무주입</td>
+<td style="text-align: right;">24,443</td>
+<td style="text-align: right;"><strong>19,452</strong></td>
+<td style="text-align: right;">10</td>
+<td style="text-align: right;">32</td>
+<td>노드 사망 짝</td>
+</tr>
+<tr>
+<td><code>20260808-115115</code></td>
+<td>submit-100</td>
+<td>judge-1 SIGKILL</td>
+<td style="text-align: right;">24,485</td>
+<td style="text-align: right;"><strong>19,493</strong></td>
+<td style="text-align: right;">655</td>
+<td style="text-align: right;">32</td>
+<td>노드 사망</td>
+</tr>
+<tr>
+<td><code>20260807-202522</code></td>
+<td>mixed-target</td>
+<td>제출 139→200 + <strong>조회 300</strong></td>
+<td style="text-align: right;">108,267</td>
+<td style="text-align: right;">35,810</td>
+<td style="text-align: right;">12</td>
+<td style="text-align: right;">32</td>
+<td>겹칠 때 기준선</td>
+</tr>
+<tr>
+<td><code>20260807-204159</code></td>
+<td>mixed-target</td>
+<td>위 + 포화, <code>prefetch=1</code></td>
+<td style="text-align: right;">108,325</td>
+<td style="text-align: right;">35,848</td>
+<td style="text-align: right;"><strong>2,446</strong></td>
+<td style="text-align: right;">32</td>
+<td>포화 비교</td>
+</tr>
+<tr>
+<td><code>20260807-211933</code></td>
+<td>mixed-target</td>
+<td>위 + 포화, <code>prefetch=64</code></td>
+<td style="text-align: right;">108,256</td>
+<td style="text-align: right;">35,827</td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;"><strong>2,048</strong></td>
+<td>포화 비교</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>prefetch</code> 값은 <code>unacked</code> 피크로 확인된다 — 상한이 32 / 128 / 2,048이고 실측이 32 / 112 / 326이다.
+<strong><code>prefetch=1</code> 런에서 <code>unacked</code>가 정확히 32를 넘지 않는 것이 설정이 실제로 적용됐다는 증거다.</strong></p>
+<p><code>20260808-163430</code>·<code>20260808-164135</code>는 같은 SIGKILL 실험을 더 긴 다운 시간(77~88초)으로 반복한
+것이다. <code>ready</code> 피크가 2,536 / 2,572로 커졌을 뿐 회수 거동은 같았다.</p>
+<h2 id="5-단계별-적체와-배수">5. 단계별 적체와 배수</h2>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">단계별 적체와 배수 — 제출 1,000/s를 150초</text>
+<text x="74" y="38" class="sub">var/loadtest-20260808-104446/pipeline.csv · 접수 132,510건 · 중복 제외 127,687건 채점 · 유실 0</text>
+<text x="16" y="38" class="ax">건</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">25,000</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">50,000</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">75,000</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">100,000</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">155s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">310s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">465s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">620s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">775s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L78.8,291.8 L83.2,290.2 L89.2,281.0 L94.6,267.4 L100.2,253.9 L107.5,248.5 L113.1,236.0 L118.3,223.6 L125.0,218.3 L130.6,207.5 L136.2,195.2 L142.3,190.1 L147.6,177.0 L152.8,170.9 L158.1,159.4 L164.3,150.4 L169.7,144.6 L175.0,133.7 L180.2,128.1 L186.1,114.6 L191.2,108.8 L196.2,95.8 L200.7,91.3 L205.6,78.5 L212.6,66.8 L218.0,60.2 L222.6,60.8 L227.4,63.1 L232.6,65.1 L237.4,69.6 L241.5,71.7 L246.0,73.8 L250.7,77.9 L255.4,80.0 L261.5,84.6 L266.0,86.6 L270.6,88.6 L274.5,93.1 L279.7,95.3 L285.3,99.2 L289.7,101.1 L294.7,105.1 L299.7,106.8 L304.2,108.8 L309.8,112.9 L314.9,115.0 L319.4,117.2 L323.5,121.2 L328.1,123.2 L334.2,127.4 L339.1,129.4 L344.1,133.6 L348.7,135.6 L353.2,137.7 L357.4,142.2 L362.7,144.4 L368.2,148.3 L372.5,150.4 L377.3,154.8 L382.5,156.7 L387.0,159.0 L392.0,162.9 L397.4,165.0 L401.9,167.2 L406.3,171.3 L411.0,173.6 L416.6,178.3 L420.9,180.4 L425.4,182.2 L430.1,186.4 L434.5,188.5 L440.7,192.6 L445.3,194.5 L449.8,196.6 L453.8,201.2 L459.1,203.3 L464.4,205.7 L468.3,209.9 L473.5,212.1 L478.6,216.4 L482.7,218.5 L487.3,220.8 L491.8,225.0 L497.3,227.3 L502.1,231.3 L506.6,233.4 L511.3,235.3 L515.9,239.5 L520.6,241.6 L525.8,245.6 L531.5,247.7 L535.9,249.7 L540.5,253.8 L545.2,256.1 L550.1,260.2 L555.0,262.3 L559.7,264.4 L564.9,268.9 L569.9,270.9 L574.5,275.2 L579.3,277.2 L584.2,279.1 L588.8,283.2 L593.3,285.1 L598.1,289.3 L603.5,291.7 L608.0,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L78.8,291.9 L83.2,291.8 L89.2,290.6 L94.6,288.4 L100.2,288.6 L107.5,286.1 L113.1,281.5 L118.3,279.4 L125.0,268.6 L130.6,261.2 L136.2,252.7 L142.3,244.3 L147.6,239.4 L152.8,231.6 L158.1,224.3 L164.3,213.2 L169.7,205.6 L175.0,198.9 L180.2,202.3 L186.1,215.8 L191.2,226.9 L196.2,239.2 L200.7,250.3 L205.6,262.6 L212.6,277.3 L218.0,290.8 L222.6,292.0 L227.4,292.0 L232.6,292.0 L237.4,292.0 L241.5,292.0 L246.0,292.0 L250.7,292.0 L255.4,292.0 L261.5,292.0 L266.0,292.0 L270.6,292.0 L274.5,292.0 L279.7,292.0 L285.3,292.0 L289.7,292.0 L294.7,292.0 L299.7,292.0 L304.2,292.0 L309.8,292.0 L314.9,292.0 L319.4,292.0 L323.5,292.0 L328.1,292.0 L334.2,292.0 L339.1,292.0 L344.1,292.0 L348.7,292.0 L353.2,292.0 L357.4,292.0 L362.7,292.0 L368.2,292.0 L372.5,292.0 L377.3,292.0 L382.5,292.0 L387.0,292.0 L392.0,292.0 L397.4,292.0 L401.9,292.0 L406.3,292.0 L411.0,292.0 L416.6,292.0 L420.9,292.0 L425.4,292.0 L430.1,292.0 L434.5,292.0 L440.7,292.0 L445.3,292.0 L449.8,292.0 L453.8,292.0 L459.1,292.0 L464.4,292.0 L468.3,292.0 L473.5,292.0 L478.6,292.0 L482.7,292.0 L487.3,292.0 L491.8,292.0 L497.3,292.0 L502.1,292.0 L506.6,292.0 L511.3,292.0 L515.9,292.0 L520.6,292.0 L525.8,292.0 L531.5,292.0 L535.9,292.0 L540.5,292.0 L545.2,292.0 L550.1,292.0 L555.0,292.0 L559.7,292.0 L564.9,292.0 L569.9,292.0 L574.5,292.0 L579.3,292.0 L584.2,292.0 L588.8,292.0 L593.3,292.0 L598.1,292.0 L603.5,292.0 L608.0,292.0" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L78.8,291.9 L83.2,292.0 L89.2,292.0 L94.6,292.0 L100.2,292.0 L107.5,291.9 L113.1,291.9 L118.3,291.9 L125.0,291.9 L130.6,291.9 L136.2,291.9 L142.3,291.9 L147.6,291.9 L152.8,291.9 L158.1,292.0 L164.3,291.9 L169.7,291.9 L175.0,291.9 L180.2,292.0 L186.1,291.9 L191.2,291.8 L196.2,292.0 L200.7,291.9 L205.6,291.9 L212.6,291.9 L218.0,292.0 L222.6,291.9 L227.4,291.9 L232.6,292.0 L237.4,292.0 L241.5,291.9 L246.0,292.0 L250.7,291.9 L255.4,291.9 L261.5,291.9 L266.0,291.9 L270.6,291.9 L274.5,291.9 L279.7,292.0 L285.3,291.9 L289.7,291.9 L294.7,291.9 L299.7,291.9 L304.2,291.9 L309.8,291.9 L314.9,291.9 L319.4,292.0 L323.5,292.0 L328.1,291.9 L334.2,292.0 L339.1,291.9 L344.1,291.9 L348.7,292.0 L353.2,291.9 L357.4,292.0 L362.7,292.0 L368.2,291.9 L372.5,292.0 L377.3,292.0 L382.5,291.9 L387.0,292.0 L392.0,292.0 L397.4,292.0 L401.9,292.0 L406.3,291.9 L411.0,291.9 L416.6,291.9 L420.9,291.9 L425.4,291.9 L430.1,291.9 L434.5,292.0 L440.7,291.9 L445.3,291.9 L449.8,292.0 L453.8,291.9 L459.1,291.9 L464.4,292.0 L468.3,291.9 L473.5,291.9 L478.6,292.0 L482.7,292.0 L487.3,292.0 L491.8,292.0 L497.3,291.9 L502.1,291.9 L506.6,291.9 L511.3,291.9 L515.9,291.9 L520.6,291.9 L525.8,291.9 L531.5,291.9 L535.9,292.0 L540.5,292.0 L545.2,291.9 L550.1,291.9 L555.0,292.0 L559.7,291.9 L564.9,292.0 L569.9,292.0 L574.5,292.0 L579.3,292.0 L584.2,291.9 L588.8,291.9 L593.3,292.0 L598.1,292.0 L603.5,292.0 L608.0,292.0" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round"/>
+<line x1="177.3" y1="46" x2="177.3" y2="292" stroke="#ea580c" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="182.3" y="60" class="mk" fill="#ea580c">부하 종료</text>
+<circle cx="218.0" cy="60.2" r="4" fill="#7c3aed"/>
+<text x="226.0" y="51.2" class="mk" fill="#7c3aed" text-anchor="start">피크 94,211</text>
+<circle cx="175.0" cy="198.9" r="4" fill="#2563eb"/>
+<text x="183.0" y="189.9" class="mk" fill="#2563eb" text-anchor="start">37,842</text>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="56" class="t">RabbitMQ ready</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#2563eb" stroke-width="2.5"/>
+<text x="652" y="76" class="t">judge outbox (MySQL)</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5 3"/>
+<text x="652" y="96" class="t">scoreboard 반영 대기</text>
+</svg></div><figcaption>단계별 적체와 배수</figcaption></figure>
+<blockquote>
+<p><code>var/loadtest-20260808-104446/pipeline.csv</code></p>
+</blockquote>
+<p>HTTP 133,935건 중 132,510건을 접수했고(거절 1,425건, <strong>1.06%</strong>), 중복을 걷어낸 127,687건이 전부
+채점됐다. <strong>제출 행과 결과 행이 일치한다 — 유실 0.</strong></p>
+<ul>
+<li>부하는 150초에 끝나는데 <code>RabbitMQ ready</code>는 <strong>209초까지 계속 올라 94,211</strong>이 된다. relay가
+  judge outbox에 남은 것을 계속 밀어넣기 때문이다. 부하가 멈춰도 백로그는 한동안 더 자란다.</li>
+<li><code>judge outbox</code>는 유입(1,014/s)과 relay(640/s)의 차이만큼만 쌓여 <strong>37,842</strong>에서 꺾이고 87초 만에
+  해소된다.</li>
+<li><code>scoreboard 반영 대기</code>는 전 구간에서 50–70에 머문다. <strong>하류라서 굶는 것이지 건강한 게 아니다.</strong></li>
+<li>부하 종료부터 큐가 빌 때까지 <strong>10.4분</strong>.</li>
+</ul>
+<p>곡선의 모양이 결론이다. <strong>백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다.</strong></p>
+<blockquote>
+<p><strong>주의.</strong> 중복 4,823건은 부하 발생기가 사용자·문제 풀을 재사용해 생긴 것이다. 실제 중복률이
+아니라 <strong>dedup 경로가 부하 상태에서 동작한다</strong>는 증거로만 쓴다.</p>
+</blockquote>
+<h3 id="51-쓰기-경로는-부하에서-효율이-올라간다">5.1 쓰기 경로는 부하에서 효율이 올라간다</h3>
+<p><code>bulk-stats.csv</code>를 부하별로 늘어놓으면 자기조절이 그대로 보인다. 두 값은 web-1 / web-2다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>부하</th>
+<th style="text-align: right;">평균 청크</th>
+<th style="text-align: right;">활성 워커</th>
+<th style="text-align: right;">in-flight 피크</th>
+<th style="text-align: right;">거절</th>
+<th style="text-align: right;">CallerRuns</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>submit-100</td>
+<td style="text-align: right;">3.94 / 4.07</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">18 / 21</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td>submit-139</td>
+<td style="text-align: right;">3.78 / 3.97</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">30 / 41</td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td><strong>submit-1000</strong></td>
+<td style="text-align: right;"><strong>22.71 / 19.88</strong></td>
+<td style="text-align: right;"><strong>4</strong></td>
+<td style="text-align: right;"><strong>410 / 338</strong></td>
+<td style="text-align: right;"><strong>0</strong></td>
+<td style="text-align: right;"><strong>0</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>한가할 때는 건당 처리에 가깝고(청크 4건, 워커 1), 밀리기 시작하면 배치가 뭉쳐 건당 비용이
+떨어진다(청크 22.7건, 워커 4). <strong>저부하 수치로 선형 외삽하면 이 자기조절을 놓친다.</strong></p>
+<p>세 가지가 같이 확인된다.</p>
+<ul>
+<li><strong>admission이 상한으로 묶는다.</strong> 상한 800에 실측 피크 410 / 338. 1,000/s에서도 절반을
+  넘지 않았고 <code>rejected</code>는 0이다 — 이 구간에서 거절은 애플리케이션이 아니라 엣지에서 일어났다.</li>
+<li><strong>완료 통지 큐가 포화되지 않았다.</strong> <code>CallerRuns</code> 0.</li>
+<li><strong>두 노드 합산이 맞는다.</strong> 제출 63,508 + 64,179 = <strong>127,687</strong>로 결과 행과 일치한다.</li>
+</ul>
+<h2 id="6-노드-사망과-회수">6. 노드 사망과 회수</h2>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">judge 노드 하나를 SIGKILL — 회수와 복구</text>
+<rect x="236.0" y="46" width="129.1" height="246" fill="#ea580c" opacity="0.07"/>
+<text x="74" y="38" class="sub">var/loadtest-20260808-115115(주입) vs -114654(무주입) · 도착 100/s · prefetch=1이라 unacked 수 = 살아 있는 consumer 수</text>
+<text x="16" y="38" class="ax">건</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">250</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">500</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">750</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">1,000</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">44s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">88s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">131s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">175s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">219s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L91.4,276.6 L109.8,245.9 L126.3,69.1 L146.2,161.3 L162.3,261.2 L178.7,215.1 L195.0,192.1 L213.5,145.9 L236.0,169.0 L253.3,169.0 L269.8,169.0 L286.5,169.0 L305.8,169.0 L325.3,169.0 L346.0,169.0 L365.1,46.0 L385.0,46.0 L407.9,46.0 L426.7,222.8 L443.2,46.0 L458.5,130.6 L476.6,253.6 L497.3,145.9 L514.1,53.7 L532.4,46.0 L550.5,222.8 L568.8,192.1 L587.6,292.0 L608.0,292.0" fill="none" stroke="#64748b" stroke-width="1.8" stroke-dasharray="6 3" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L90.5,292.0 L108.6,292.0 L128.6,292.0 L149.3,292.0 L164.6,291.8 L181.5,292.0 L198.4,292.0 L214.7,292.0 L231.5,292.0 L249.1,292.0 L270.0,292.0 L287.4,292.0 L305.0,292.0 L322.3,292.0 L337.9,292.0 L356.9,289.5 L373.1,292.0 L393.0,292.0 L410.7,292.0 L428.5,292.0 L446.3,292.0 L462.7,290.8 L482.6,292.0 L499.2,292.0 L516.8,292.0 L534.1,292.0 L552.1,292.0 L572.1,292.0 L588.3,292.0 L607.6,292.0" fill="none" stroke="#0f766e" stroke-width="1.6" stroke-dasharray="3 3" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L91.4,292.0 L109.8,292.0 L126.3,292.0 L146.2,292.0 L162.3,292.0 L178.7,292.0 L195.0,292.0 L213.5,292.0 L236.0,279.2 L253.3,261.7 L269.8,250.7 L286.5,225.8 L305.8,182.0 L325.3,177.4 L346.0,130.9 L365.1,152.5 L385.0,232.2 L407.9,291.8 L426.7,292.0 L443.2,290.3 L458.5,292.0 L476.6,292.0 L497.3,292.0 L514.1,292.0 L532.4,291.5 L550.5,292.0 L568.8,292.0 L587.6,292.0 L608.0,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<line x1="236.0" y1="46" x2="236.0" y2="292" stroke="#ea580c" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="241.0" y="60" class="mk" fill="#ea580c">SIGKILL · unacked 32→16</text>
+<line x1="365.1" y1="46" x2="365.1" y2="292" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="370.1" y="78" class="mk" fill="#0f766e">53초 뒤 32 복귀</text>
+<circle cx="346.0" cy="130.9" r="4" fill="#7c3aed"/>
+<text x="354.0" y="121.9" class="mk" fill="#7c3aed" text-anchor="start">피크 655</text>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#64748b" stroke-width="2.5" stroke-dasharray="6 3"/>
+<text x="652" y="56" class="t">unacked (0–32 스케일)</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#0f766e" stroke-width="2.5" stroke-dasharray="3 3"/>
+<text x="652" y="76" class="t">ready — 무주입 짝</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="96" class="t">ready — SIGKILL</text>
+</svg></div><figcaption>노드 사망과 회수</figcaption></figure>
+<blockquote>
+<p><code>var/loadtest-20260808-115115</code>(주입) vs <code>-114654</code>(무주입 짝)</p>
+</blockquote>
+<p>백로그가 없는 조건(도착 100/s)에서 judge 노드 하나를 SIGKILL했다. <strong>백로그를 걷어내야 재전달
+자체의 속도가 보인다.</strong></p>
+<p><code>prefetch=1</code>이라 <strong><code>unacked</code> 수가 곧 일하고 있는 consumer 수</strong>다. 그래서 <code>32 → 16 → 32</code>가 노드의
+생사를 그대로 보여준다. 회색 점선이 그것이고, 주황 음영이 노드가 죽어 있던 구간이다.</p>
+<ul>
+<li>SIGKILL 직후 broker가 TCP 끊김을 감지해 미확인 메시지를 큐로 되돌린다. <code>unacked</code>가 32에서 16으로
+  한 계단 떨어질 뿐 <strong>유실이 없다.</strong></li>
+<li>죽어 있는 동안 슬롯이 16개로 줄어 처리율이 절반(약 75/s)이 되고 <code>ready</code>가 <strong>655</strong>까지 쌓인다.
+  무주입 짝은 같은 구간에서 10을 넘지 않는다. 샘플 간격이 7~9초라 실제 봉우리는 이보다 높을 수 있다.</li>
+<li>노드가 돌아오면 <code>unacked</code>가 32로 복귀하고 <code>ready</code>는 곧 0이 된다.</li>
+</ul>
+<p><strong>꼬리가 나빠진 것은 재전달이 느려서가 아니다.</strong> 대기는 <code>ready ÷ 그때의 처리율</code>이고, 처리율이
+구간마다 다르므로 값은 범위로만 말할 수 있다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>계산</th>
+<th style="text-align: right;">대기</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>회복된 용량으로 전부 소화</td>
+<td><code>655 ÷ 150</code></td>
+<td style="text-align: right;">4.4초</td>
+</tr>
+<tr>
+<td>반토막 용량이 끝까지</td>
+<td><code>655 ÷ 75</code></td>
+<td style="text-align: right;">8.7초</td>
+</tr>
+<tr>
+<td><strong>실측 max에서 채점 꼬리 2초를 뺀 값</strong></td>
+<td><code>9.77 − 2.0</code></td>
+<td style="text-align: right;"><strong>7.8초</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>7.8초가 두 경계 사이에 있고 상한 쪽에 가깝다 — <strong>구간의 대부분을 반토막 용량이 지배했다는 뜻이다.</strong>
+<code>ready</code>를 단일 처리율로 나누면 이 산수가 닫히지 않는다. 복구 영향을 줄이려면 broker가 아니라
+JVM 기동 시간이나 노드 수를 손대야 한다.</p>
+<h2 id="7-prefetch-별-consumer-로컬-버퍼">7. <code>prefetch</code> 별 consumer 로컬 버퍼</h2>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">prefetch 별 consumer 로컬 버퍼 (unacked)</text>
+<text x="74" y="38" class="sub">도착·서비스 분포·consumer 수 고정, 디스패치 정책만 변경 · 상한은 32 / 128 / 2,048</text>
+<text x="16" y="38" class="ax">unacked (건)</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">125</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">250</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">375</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">500</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">44s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">88s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">132s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">176s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">219s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L91.9,276.3 L110.6,288.6 L130.6,287.6 L147.1,278.2 L165.7,276.3 L186.9,276.3 L204.1,278.7 L218.8,276.3 L235.9,276.3 L252.8,276.3 L267.6,276.3 L284.1,276.3 L302.1,276.3 L316.7,276.3 L333.6,276.3 L350.1,288.6 L364.5,276.3 L383.4,276.3 L400.2,276.3 L416.8,276.3 L432.9,283.6 L449.4,287.1 L467.4,279.2 L481.6,283.6 L500.1,276.3 L516.6,279.2 L533.1,276.3 L549.8,276.3 L566.1,276.3 L583.9,276.3 L601.5,292.0" fill="none" stroke="#0f766e" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L91.1,276.3 L108.7,282.2 L123.3,279.7 L139.8,263.0 L156.7,258.5 L171.8,252.6 L190.9,265.9 L207.9,273.8 L224.6,261.0 L239.7,268.4 L256.3,248.7 L274.5,251.2 L291.1,259.0 L307.7,260.0 L324.0,269.9 L339.7,249.7 L356.1,264.4 L372.4,251.2 L390.6,247.2 L407.0,265.4 L423.3,260.5 L439.8,257.1 L456.0,264.0 L474.5,254.6 L490.8,236.9 L507.3,246.7 L523.7,275.8 L539.9,269.4 L558.0,259.0 L574.7,257.1 L591.1,261.5 L607.7,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L89.2,292.0 L106.0,135.1 L123.0,166.0 L138.3,208.4 L155.6,199.5 L172.4,190.6 L188.8,218.7 L205.8,199.5 L223.8,182.3 L239.9,189.7 L256.9,171.5 L273.8,131.6 L288.4,147.8 L304.9,156.2 L321.9,139.5 L339.7,164.6 L356.4,167.0 L373.1,177.9 L389.4,205.4 L405.5,171.0 L424.5,176.4 L440.9,166.5 L456.5,211.3 L473.1,150.3 L489.5,193.1 L508.8,210.3 L525.4,207.9 L542.0,202.0 L556.4,213.8 L572.9,202.9 L591.4,261.5 L608.0,292.0" fill="none" stroke="#ea580c" stroke-width="2" stroke-linejoin="round"/>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#0f766e" stroke-width="2.5"/>
+<text x="652" y="56" class="t">prefetch=1</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="76" class="t">prefetch=4</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#ea580c" stroke-width="2.5"/>
+<text x="652" y="96" class="t">prefetch=64</text>
+</svg></div><figcaption>prefetch별 로컬 버퍼</figcaption></figure>
+<blockquote>
+<p><code>var/loadtest-20260808-092647</code> / <code>-094634</code> / <code>-093145</code></p>
+</blockquote>
+<p>도착률·서비스 분포·consumer 수를 고정하고 디스패치 정책만 바꿨다. 세 런 모두 <code>ready</code>가 109를
+넘지 않아 <strong>포화가 아닌 상태</strong>에서 잰 값이다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align: right;"><code>prefetch</code></th>
+<th style="text-align: right;">버퍼 상한</th>
+<th style="text-align: right;"><code>unacked</code> 피크</th>
+<th style="text-align: right;">상한 대비</th>
+<th style="text-align: right;">p99</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">100%</td>
+<td style="text-align: right;"><strong>2.376s</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">128</td>
+<td style="text-align: right;">112</td>
+<td style="text-align: right;">88%</td>
+<td style="text-align: right;"><strong>3.975s</strong></td>
+</tr>
+<tr>
+<td style="text-align: right;">64</td>
+<td style="text-align: right;">2,048</td>
+<td style="text-align: right;">326</td>
+<td style="text-align: right;"><strong>16%</strong></td>
+<td style="text-align: right;"><strong>10.308s</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>상한이 16배 차이인데 p99는 2.6배다.</strong> <code>prefetch=64</code>에서도 버퍼는 상한의 일부만 찬다 —
+<strong>상한이 아니라 실제로 얼마나 찼는지가 손해를 정한다.</strong></p>
+<p><code>prefetch=1</code>에서의 2.376초는 대기가 아니라 서비스 시간 꼬리 그 자체다. <code>prefetch</code>가 키우는 것은
+그 위에 얹히는 대기다.</p>
+<p>순서를 뒤집어 재현했을 때 p99가 <code>2.372 → 2.376s</code>, <code>10.458 → 10.308s</code>로 일치해 워밍업 교란도
+배제했다. 위 표의 값은 전부 <code>end-to-end-staleness.csv</code>의 <code>result-queryable</code>이다.</p>
+<h3 id="71-같은-변경을-포화-상태에서-재면">7.1 같은 변경을 포화 상태에서 재면</h3>
+<p>제출과 조회가 겹치고(<code>mixed-target</code>: 제출 139→200 + 조회 300) 도착이 용량을 넘는 조건에서
+같은 비교를 했다. <strong>여기서는 같은 변경이 훨씬 작아 보인다.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>조건</th>
+<th style="text-align: right;"><code>ready</code> 피크</th>
+<th style="text-align: right;"><code>unacked</code> 피크</th>
+<th style="text-align: right;">p99</th>
+<th style="text-align: right;">악화</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>포화 · <code>prefetch=1</code></td>
+<td style="text-align: right;"><strong>2,446</strong></td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">14.297s</td>
+<td style="text-align: right;"></td>
+</tr>
+<tr>
+<td>포화 · <code>prefetch=64</code></td>
+<td style="text-align: right;">108</td>
+<td style="text-align: right;"><strong>2,048</strong></td>
+<td style="text-align: right;">17.882s</td>
+<td style="text-align: right;"><strong>+25%</strong></td>
+</tr>
+<tr>
+<td>비포화 · <code>prefetch=1</code></td>
+<td style="text-align: right;">87</td>
+<td style="text-align: right;">32</td>
+<td style="text-align: right;">2.376s</td>
+<td style="text-align: right;"></td>
+</tr>
+<tr>
+<td>비포화 · <code>prefetch=64</code></td>
+<td style="text-align: right;">0</td>
+<td style="text-align: right;">326</td>
+<td style="text-align: right;">10.308s</td>
+<td style="text-align: right;"><strong>+334%</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>같은 변경이 +25%로도 +334%로도 보인다.</strong> 포화 상태에서는 백로그라는 지배항이 분자와 분모를 함께
+키워 <code>prefetch</code>의 효과를 희석하기 때문이다. <em>무엇을 재는지보다 어떤 조건에서 재는지가 결론을 바꾼다.</em></p>
+<p>그리고 이 표에는 운영에 관한 것이 하나 더 들어 있다. <strong>포화 상태에서 <code>prefetch=64</code>의 <code>ready</code>는
+108이고 <code>prefetch=1</code>의 <code>ready</code>는 2,446이다.</strong> 큐 깊이만 보는 대시보드에서는 느린 쪽이 20배 건강해
+보인다. 백로그가 사라진 게 아니라 broker의 큐에서 consumer 로컬 버퍼(<code>unacked</code> 2,048)로 옮겨간
+것뿐인데도 그렇다.</p>
+<blockquote>
+<p><strong><code>ready</code>만 보면 안 되고 <code>unacked</code>를 함께 봐야 하는 이유가 이것이다.</strong> §9의 게이지에 항상 상한을
+같이 내보내는 것도 같은 이유다.</p>
+</blockquote>
+<h2 id="8-스코어보드-복구-실험">8. 스코어보드 복구 실험</h2>
+<p>본문 3장은 스코어보드 전달을 DB outbox에서 RabbitMQ stream으로 옮긴 판단을 다룬다.
+그 판단의 근거가 이 실험이고, 두 후보를 <strong>별도 worktree에 각각 구현해</strong> 같은 절차로 돌렸다.</p>
+<p><strong>절차</strong> — <code>gatling/run-scoreboard-rdb-recovery.ps1</code></p>
+<ol>
+<li>consumer를 멈추고 시점 K의 Redis RDB를 저장한다. checkpoint 값과 스코어보드 SHA-256 digest를 함께 기록</li>
+<li>제출 tail을 더 흘려 상태 N을 만든다</li>
+<li>Redis를 SIGKILL하고 K의 RDB로 되돌린다</li>
+<li>digest와 checkpoint가 N으로 돌아올 때까지 500ms마다 확인한다</li>
+</ol>
+<p><strong>일부 key만 지우는 시험이 아니다.</strong> 스코어보드와 checkpoint가 같은 스냅샷 안에서 함께 되감긴다.</p>
+<h3 id="81-outbox">8.1 outbox</h3>
+<p><code>var/c-stage-recovery/outbox-run-1/recovery-summary.csv</code></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>항목</th>
+<th>값</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>checkpoint key</td>
+<td><code>contest:scoreboard:outbox:seq</code></td>
+</tr>
+<tr>
+<td>K → N</td>
+<td>73 → 164 (<strong>재적용 대상 91건</strong>)</td>
+</tr>
+<tr>
+<td>되감긴 checkpoint</td>
+<td>73 — 정확히 K로 복원</td>
+</tr>
+<tr>
+<td>참가자</td>
+<td>30 → 60</td>
+</tr>
+<tr>
+<td><strong>탐지</strong></td>
+<td><strong>955ms</strong> (폴링 간격보다 짧았다)</td>
+</tr>
+<tr>
+<td>첫 진행</td>
+<td>754ms</td>
+</tr>
+<tr>
+<td>checkpoint 수렴</td>
+<td>30,923ms</td>
+</tr>
+<tr>
+<td><strong>digest 수렴</strong></td>
+<td><strong>30,954ms</strong></td>
+</tr>
+<tr>
+<td>운영 정지 상태 도달</td>
+<td>33,043ms</td>
+</tr>
+<tr>
+<td>수동 개입</td>
+<td><strong>없음</strong></td>
+</tr>
+<tr>
+<td>최종 잔여</td>
+<td>neutral pending 0 · outbox 비종료 0 · Rabbit ready 0</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>31초의 지배항은 탐지도 재적용도 아니다.</strong> 어긋남은 1초 안에 발견됐고, 적용 루프는
+<code>poll-interval-ms=200</code> / <code>batch-size=500</code>이라 쓰기 시간은 500ms 샘플 해상도 아래다.
+시간을 쓴 것은 <strong>복구 스캔</strong>이다 — <code>recovery-interval-ms=5000</code> / <code>recovery-batch-size=10</code>이라
+한 사이클에 최대 10건만 되살린다. 91건에 6사이클이 필요했다.</p>
+<p><code>recovery-samples.csv</code>의 <code>contest_scoreboard_applied_total</code>이 그대로 보여준다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>elapsed(ms)</th>
+<th style="text-align: right;">4,872</th>
+<th style="text-align: right;">9,441</th>
+<th style="text-align: right;">14,547</th>
+<th style="text-align: right;">19,660</th>
+<th style="text-align: right;">24,770</th>
+<th style="text-align: right;">29,875</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>applied_total</code></td>
+<td style="text-align: right;">174</td>
+<td style="text-align: right;">204</td>
+<td style="text-align: right;">234</td>
+<td style="text-align: right;">264</td>
+<td style="text-align: right;">284</td>
+<td style="text-align: right;">304</td>
+</tr>
+<tr>
+<td>계단 간격(ms)</td>
+<td style="text-align: right;">—</td>
+<td style="text-align: right;">5,106</td>
+<td style="text-align: right;">5,113</td>
+<td style="text-align: right;">5,110</td>
+<td style="text-align: right;">5,105</td>
+<td style="text-align: right;">5,105</td>
+</tr>
+</tbody>
+</table></div>
+<p>간격이 스캔 주기와 일치한다. 하네스가 <code>pollIntervalMs=500</code>으로 새 값을 받고 있었으므로 스크레이프
+아티팩트가 아니다. <strong>계단 사이 5초는 일한 시간이 아니라 다음 스캔을 기다린 시간이다.</strong></p>
+<p><code>requeueLostTail</code>은 <code>findHighestRedisSequences</code>에 SQL <code>LIMIT batchSize</code>를 걸고 그 뒤 자바에서
+<code>redisSequence &gt; currentSequence</code>를 거른다. <strong>뒤처진 양을 묻지 않으므로 복구 처리율이 상수다</strong> —
+실측 약 3행/초. 손실 구간이 커지면 복구 시간이 같은 비율로 늘어난다.</p>
+<p>그리고 이 31초 동안 <code>contest_scoreboard_pending_events</code>와 <code>contest_scoreboard_oldest_ready_seconds</code>는
+<strong>전 구간 0이었다.</strong> 행이 DB에서 종료 상태라 복구 스캔이 <code>PENDING</code>으로 되돌리기 전에는 백로그
+지표에 잡히지 않는다. §9에서 말한 "지표가 안 보이는 것도 장애다"의 실측 사례다.</p>
+<blockquote>
+<p><strong>확인하지 않은 것.</strong> <code>applied_total</code>은 +140인데 재적용 대상은 91건이다. 같은 사이클에서 도는
+<code>requeueDuplicateSequences</code>가 재적용된 행을 다시 집어 올린 churn으로 보이지만, 로그로 확인하지
+않았다.</p>
+</blockquote>
+<h3 id="82-stream">8.2 stream</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>런</th>
+<th style="text-align: right;">수렴</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream-run-4</code></td>
+<td style="text-align: right;"><strong>2,038ms</strong></td>
+</tr>
+<tr>
+<td><code>stream-run-3</code></td>
+<td style="text-align: right;"><strong>2,533ms</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>되감긴 offset + 1로 재구독하면 broker가 그대로 다시 흘려준다. <strong>탐지 단계도 배치 재적용 루프도 없다.</strong></p>
+<h3 id="83-두-후보의-기준점이-다르다">8.3 두 후보의 기준점이 다르다</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th style="text-align: right;">outbox</th>
+<th style="text-align: right;">stream</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>스코어보드 참가자</td>
+<td style="text-align: right;"><strong>30</strong></td>
+<td style="text-align: right;"><strong>5,030</strong></td>
+</tr>
+<tr>
+<td>결과 행</td>
+<td style="text-align: right;">164</td>
+<td style="text-align: right;">19,597</td>
+</tr>
+<tr>
+<td>RDB 크기</td>
+<td style="text-align: right;">31 KB</td>
+<td style="text-align: right;">5.8 MB</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>outbox 쪽은 시간을 아끼려고 축소한 상태에서 쟀다.</strong> 스코어보드가 작으면 digest 계산도 재적용도
+싸므로 outbox에 유리한 조건이다. 그런데도 31초가 걸렸다.</p>
+<p><strong>그래서 31초 대 2초를 성능 배수로 인용하지 않는다.</strong> 이 실험이 보여주는 것은 시간이 아니라
+제어 흐름의 복잡도다 — 한쪽은 탐지와 배치 재적용 루프가 필요하고, 다른 쪽은 재구독 한 번이다.</p>
+<h3 id="84-stream-런-네-개가-전부-게이트에서-fail이다">8.4 stream 런 네 개가 전부 게이트에서 FAIL이다</h3>
+<p><code>recovery-failure.txt</code>가 네 개 다 남아 있다. <strong>전부 harness와 환경 문제이고 시스템 실패가 아니다.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>런</th>
+<th>실패 사유</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stream/</code></td>
+<td>컨테이너를 16개 기대했는데 세는 방식이 틀려 1개로 셌다 — 관측 스택 컨테이너가 같은 목록에 섞였다</td>
+</tr>
+<tr>
+<td><code>stream-run-1</code></td>
+<td><code>docker compose</code>가 stderr에 낸 MySQL 비밀번호 경고를 PowerShell이 <code>NativeCommandError</code>로 승격시켰다</td>
+</tr>
+<tr>
+<td><code>stream-run-3</code></td>
+<td><code>oj-loadtest-redis</code> health가 아직 <code>starting</code>인데 검사했다</td>
+</tr>
+<tr>
+<td><code>stream-run-4</code></td>
+<td><code>oj-loadtest-batch-1</code> health가 <code>unhealthy</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>의미 상태는 수렴했지만 최종 게이트를 통과하지 못했으므로 <strong>2.038 / 2.533초는 수렴 상한
+관찰값이다.</strong> 확정값으로 쓰지 않는다.</p>
+<h2 id="9-무엇을-보면-이-시스템이-아픈가">9. 무엇을 보면 이 시스템이 아픈가</h2>
+<p>지표는 <strong>살아 있는 객체를 스크레이프 시점에 읽는다.</strong> 기록해 둔 값을 내보내면, chunk가 하나도
+끝나지 않는 동안 — 정확히 보고 싶은 상황에서 — 게이지가 낮은 값에 얼어붙는다.</p>
+<p><strong>깊이 게이지에는 항상 설정 상한을 함께 낸다.</strong> 그래야 패널이 비율이 되고 대시보드가 설정값을
+하드코딩하지 않는다. <code>in_flight</code>가 <code>in_flight.limit</code>에 붙으면 그 순간 503이 나가고 있다는 뜻이다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>알림</th>
+<th>조건</th>
+<th style="text-align: right;">for</th>
+<th>등급</th>
+<th>왜 이 값인가</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ContestOutboxDrainTimeTooLong</code></td>
+<td>예상 drain &gt; 120s</td>
+<td style="text-align: right;">2m</td>
+<td>warning</td>
+<td><code>pending ÷ 최근 적용률</code>을 recording rule로 고정. 대시보드와 알림이 같은 정의를 읽는다</td>
+</tr>
+<tr>
+<td><code>ContestOutboxHeadOfLineStalled</code></td>
+<td>oldest-ready &gt; 60s</td>
+<td style="text-align: right;">2m</td>
+<td>warning</td>
+<td>drain rate가 못 보는 절반. 뒤가 정상적으로 빠져도 맨 앞 한 행이 막히면 예상 시간은 건강하게 나온다</td>
+</tr>
+<tr>
+<td><code>ContestOutboxBacklogUnobserved</code></td>
+<td>공통 gauge 갱신 실패</td>
+<td style="text-align: right;">5m</td>
+<td>warning</td>
+<td>지표가 안 보이는 것도 장애다</td>
+</tr>
+<tr>
+<td><code>ContestSubmissionShedding</code></td>
+<td>503 shed rate &gt; 0</td>
+<td style="text-align: right;">2m</td>
+<td>warning</td>
+<td>거절이 시작된 순간</td>
+</tr>
+<tr>
+<td><code>ContestSubmissionCompletionSaturated</code></td>
+<td>CallerRuns rate &gt; 0</td>
+<td style="text-align: right;">5m</td>
+<td>warning</td>
+<td>통지 큐가 차서 호출 스레드가 대신 실행하고 있다</td>
+</tr>
+<tr>
+<td><code>OjAppInstanceDown</code></td>
+<td><code>up == 0</code></td>
+<td style="text-align: right;">1m</td>
+<td>critical</td>
+<td>관리 포트만 뜬 역할은 커넥터를 하나도 바인딩하지 않고도 프로세스 헬스체크를 계속 통과한다</td>
+</tr>
+<tr>
+<td><code>OjAppInstanceRestarted</code></td>
+<td>10분 내 기동 시각 변화</td>
+<td style="text-align: right;">—</td>
+<td>critical</td>
+<td>cgroup OOM 지표가 닿지 못하는 절반 — JVM 자신이 OOM으로 죽는 경우</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>drain rate가 0이면 결과는 <code>+Inf</code>다. 나누기를 방어하지 않은 것은 의도다</strong> — 움직이지 않는
+pending에는 유한한 drain 시간이 없고, 그 상태가 가장 알림이 필요한 상태다. 방어하면 그래프에
+구멍이 생긴다. 빈 파이프라인은 <code>0/0</code>이라 <code>NaN</code>이고 모든 비교에서 false이므로 놀고 있는 스택은
+조용하다.</p>
+<p><strong>CPU throttling 알림은 일부러 만들지 않았다.</strong> 부하 없이도 모든 인스턴스가 61–78%를 기록하므로
+의미가 있을 만큼 낮은 임계값은 항상 발화한다. 대시보드에서 해석할 값이지 호출을 받을 값이 아니다.</p>
+<p>Alertmanager inhibition은 critical이 warning을 누르도록 했다. 인스턴스가 죽었거나 방금 재시작했다면
+그 인스턴스가 만든 숫자는 전부 무효다. backlog 게이지는 <code>batch-1</code>에서만 나오므로 <code>batch-1</code>이
+내려가면 outbox warning들은 독립된 발견이 아니라 critical의 결과다.</p>
+<blockquote>
+<p><strong>하지 않은 것.</strong> 임계값은 위 실험에서 나온 관계식으로 정했고 <strong>운영 트래픽으로 검증한 적은
+없다.</strong> 온콜·에스컬레이션 절차도 없다.</p>
+</blockquote>
+<h2 id="10-테스트">10. 테스트</h2>
+<p><strong>무엇이 깨지면 안 되는가</strong>에서 시작해 거기만 고정했다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>대상</th>
+<th>무엇을 고정했나</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>순위 정합성</td>
+<td>늦게 도착한 오답이 반영돼 최종 penalty가 17일 것</td>
+</tr>
+<tr>
+<td>순서 무관성</td>
+<td>같은 이벤트 집합을 무작위 순서로 적용해도 결과가 같을 것</td>
+</tr>
+<tr>
+<td>경로 일치</td>
+<td>실시간 Redis 경로와 MySQL 재구성 경로가 같은 순위를 낼 것</td>
+</tr>
+<tr>
+<td>역할 기동 계약</td>
+<td><code>multi-web</code> / <code>multi-batch</code> / <code>multi-judge</code> 프로필을 실제로 띄워 scheduler·listener 활성 상태를 검증</td>
+</tr>
+<tr>
+<td>실행기 수명주기</td>
+<td>완료 통지 실행기와 결과 batch writer가 종료 중 진행 작업을 기다리는 동작</td>
+</tr>
+</tbody>
+</table></div>
+<p>실행 조건은 격리돼 있다. <code>test</code> 프로필은 별도 MySQL(<code>oj_test</code>)을 쓰고 Flyway가 스키마를 만든다.
+Redis가 필요한 테스트는 기본 skip이고 <code>-DredisIntegration=true</code>로 켠다. 부하 테스트는 <code>load-test</code>
+태그로 제외되어 있어 <code>-DincludeLoadTests=true</code>와 클래스별 환경변수를 함께 줘야 실행된다.</p>
+<blockquote>
+<p><strong>하지 않은 것.</strong> 단위 테스트 커버리지는 낮고, 위 다섯 가지 밖의 경로는 테스트가 아니라 부하·장애
+실험으로 확인했다. Testcontainers를 쓰지 않아 통합 테스트가 외부 MySQL 인스턴스에 의존한다.
+CI에서 자동으로 돌지 않는다.</p>
+</blockquote>
+<h2 id="11-폐기한-실행과-그-이유">11. 폐기한 실행과 그 이유</h2>
+<p><strong>남긴 수치보다 버린 실행이 더 많다.</strong> 왜 버렸는지가 남은 수치의 신뢰도다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>무엇</th>
+<th>왜 버렸나</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>열린 모델 제출 시나리오 전부</td>
+<td>매 요청마다 사용자를 무작위로 뽑아, <strong>자기가 만든 트래픽을 자기가 쿨다운에 걸려 거절당했다.</strong> 모든 시나리오를 닫힌 모델로 바꾼 뒤에야 rate limit을 켠 채 잴 수 있었다</td>
+</tr>
+<tr>
+<td>2026-07-23 조회 수치</td>
+<td>참가자 약 9,720명인 스코어보드에 <code>startRank</code> 1..100,000을 뽑아 <strong>대부분 빈 페이지를 쟀다.</strong> 제출 건수와 후단 검증은 유효하지만 조회 수치는 기준선이 아니다</td>
+</tr>
+<tr>
+<td><code>batch-1</code> 512M·768M 런</td>
+<td>제출 HTTP 단계가 끝난 뒤 outbox 발행 중 OOM 종료. 상한을 1024M로 올린 근거가 됐다</td>
+</tr>
+<tr>
+<td>judge concurrency 64 런</td>
+<td>스레드 스택이 컨테이너 여유를 먹어 OOM 세 번. 이 조건은 실제 채점 하드웨어로 성립하지 않는다</td>
+</tr>
+<tr>
+<td>stream 복구 두 실행</td>
+<td>의미 상태는 수렴했지만 Docker health 회복 전에 검사한 harness 문제로 최종 게이트가 FAIL. <strong>수렴 상한 관찰값으로만 쓴다</strong></td>
+</tr>
+<tr>
+<td>outbox 복구 기준점</td>
+<td>시간을 아끼려 축소한 기준점(참가자 30명)에서 쟀고 <strong>그건 outbox에 유리한 조건이다.</strong> 그래서 outbox 31.0초 vs stream 2.0–2.5초를 성능 배수로 인용하지 않는다</td>
+</tr>
+</tbody>
+</table></div>
+<p><code>var/</code>에는 위 표에 없는 실행도 남아 있다. 채점이 거의 진행되지 않은 채 큐만 쌓인 실행
+(<code>20260808-140228</code>: 결과 1,621건에 <code>ready</code> 17,604), 도중에 끊긴 실행(<code>20260808-113647</code>: 66초) 등은
+비교 대상으로 쓰지 않았다.</p>
+<h2 id="12-재현">12. 재현</h2>
+<pre><code class="language-bash">docker compose -p oj-loadtest -f compose.yaml -f compose.loadtest.yaml up -d --build
+</code></pre>
+<pre><code class="language-bash">python docs/portfolio/make-charts.py
+</code></pre>
+<p>부하 실행은 <code>gatling/README.md</code>를 따른다. Gatling은 Windows 호스트에서 돌려 서버 컨테이너의 WSL
+예산과 분리한다. 원시 결과(<code>results-standalone/</code>, <code>var/*.gatling.log</code>, <code>var/*.jfr</code>)는 로컬
+산출물이며 Git에서 추적하지 않는다.</p>
+<p>이 문서의 그림 3장은 <code>var/loadtest-*/pipeline.csv</code>만 있으면 <code>make-charts.py</code>로 언제든 다시 만들 수
+있다. <strong>스크린샷이 아니라 원자료에서 그린 것이라 검증과 재생성이 가능하다.</strong></p>
+</main>
+</div>
+<footer class="site-foot">
+  <div class="inner">
+    <div><span>신승경 · 백엔드 개발자</span><span>tmdrud049@gmail.com</span></div>
+    <div>
+      <a href="https://github.com/tmdrud0/web" target="_blank" rel="noopener">저장소</a>
+      <a href="measurements.html">측정 기록</a>
+      <a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">Codeforces</a>
+    </div>
+  </div>
+</footer>
+<script>
+(function () {
+  var bar = document.getElementById('progress');
+  var ticking = false;
+  function paint() {
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.transform = 'scaleX(' + (max > 0 ? h.scrollTop / max : 0) + ')';
+    ticking = false;
+  }
+  addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(paint); }
+  }, { passive: true });
+  paint();
+
+  var links = [].slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+  if (!links.length || !('IntersectionObserver' in window)) return;
+  var byId = {};
+  var targets = [];
+  links.forEach(function (a) {
+    var el = document.getElementById(decodeURIComponent(a.hash.slice(1)));
+    if (el) { byId[el.id] = a; targets.push(el); }
+  });
+  var visible = new Set();
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.add(e.target.id); else visible.delete(e.target.id);
+    });
+    // 장과 그 안의 소제목이 같이 걸린다. 문서 순서상 마지막 = 지금 읽는 자리.
+    var current = null;
+    for (var i = targets.length - 1; i >= 0; i--) {
+      if (visible.has(targets[i].id)) { current = targets[i].id; break; }
+    }
+    if (!current) return;
+    links.forEach(function (a) { a.classList.remove('on', 'cur'); });
+    var leaf = byId[current];
+    leaf.classList.add('on');
+    var owner = leaf.getAttribute('data-ch');
+    if (owner && byId[owner]) byId[owner].classList.add('cur');
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+  targets.forEach(function (el) { io.observe(el); });
+})();
+</script>
+</body>
+</html>

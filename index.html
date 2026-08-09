@@ -3,1054 +3,1397 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>온라인 저지 채점 파이프라인 — 설계 포트폴리오</title>
-<meta name="description" content="대회 트래픽을 버티는 온라인 저지 채점 파이프라인 — V0→V5 설계 기록">
+<title>신승경 · 백엔드 개발자 포트폴리오</title>
+<meta name="description" content="온라인 저지 대회 제출 파이프라인 — 제출 1,000/s에서 127,687건 전량 채점·유실 0, 노드 사망 후 9.8초, Redis 롤백 후 2초대 수렴. 측정 조건까지 함께 적은 백엔드 신입 포트폴리오.">
+<meta name="author" content="신승경">
+<meta property="og:type" content="website">
+<meta property="og:title" content="신승경 · 백엔드 개발자 포트폴리오">
+<meta property="og:description" content="온라인 저지 대회 제출 파이프라인 — 제출 1,000/s에서 127,687건 전량 채점·유실 0, 노드 사망 후 9.8초, Redis 롤백 후 2초대 수렴. 측정 조건까지 함께 적은 백엔드 신입 포트폴리오.">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f766e'/%3E%3Ctext x='16' y='22' font-family='sans-serif' font-size='17' font-weight='700' fill='white' text-anchor='middle'%3ES%3C/text%3E%3C/svg%3E">
 </head>
 <body>
-<style>
-  :root {
-    --page: #f7f8f6;
-    --card: #fdfdfc;
-    --card-2: #f1f3ef;
-    --ink: #151915;
-    --ink-2: #4d554f;
-    --muted: #878d86;
-    --line: #e2e5df;
-    --line-strong: #cdd2ca;
-    --accent: #0e7a4e;
-    --accent-ink: #0a6440;
-    --accent-soft: #e2f1e9;
-    --queue: #c94f1e;
-    --queue-soft: #faeae2;
-    --blue: #2a78d6;
-    --blue-soft: #e7f0fb;
-    --violet: #4a3aa7;
-    --code-bg: #f0f2ee;
-    --code-ink: #2b332d;
-    --bar-naive: #2a78d6;
-    --bar-opt: #1baf7a;
-    --shadow: 0 1px 2px rgba(21,25,21,.05), 0 8px 24px -12px rgba(21,25,21,.10);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --page: #0e100e;
-      --card: #161a17;
-      --card-2: #1c211d;
-      --ink: #eef1ed;
-      --ink-2: #b6bfb6;
-      --muted: #7e857d;
-      --line: #262b26;
-      --line-strong: #333a33;
-      --accent: #41c489;
-      --accent-ink: #52d197;
-      --accent-soft: rgba(65,196,137,.13);
-      --queue: #e8763f;
-      --queue-soft: rgba(232,118,63,.13);
-      --blue: #3987e5;
-      --blue-soft: rgba(57,135,229,.14);
-      --violet: #9085e9;
-      --code-bg: #12150f;
-      --code-ink: #ccd4c9;
-      --bar-naive: #3987e5;
-      --bar-opt: #199e70;
-      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
-    }
-  }
-  :root[data-theme="dark"] {
-    --page: #0e100e;
-    --card: #161a17;
-    --card-2: #1c211d;
-    --ink: #eef1ed;
-    --ink-2: #b6bfb6;
-    --muted: #7e857d;
-    --line: #262b26;
-    --line-strong: #333a33;
-    --accent: #41c489;
-    --accent-ink: #52d197;
-    --accent-soft: rgba(65,196,137,.13);
-    --queue: #e8763f;
-    --queue-soft: rgba(232,118,63,.13);
-    --blue: #3987e5;
-    --blue-soft: rgba(57,135,229,.14);
-    --violet: #9085e9;
-    --code-bg: #12150f;
-    --code-ink: #ccd4c9;
-    --bar-naive: #3987e5;
-    --bar-opt: #199e70;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.5);
-  }
-  :root[data-theme="light"] {
-    --page: #f7f8f6;
-    --card: #fdfdfc;
-    --card-2: #f1f3ef;
-    --ink: #151915;
-    --ink-2: #4d554f;
-    --muted: #878d86;
-    --line: #e2e5df;
-    --line-strong: #cdd2ca;
-    --accent: #0e7a4e;
-    --accent-ink: #0a6440;
-    --accent-soft: #e2f1e9;
-    --queue: #c94f1e;
-    --queue-soft: #faeae2;
-    --blue: #2a78d6;
-    --blue-soft: #e7f0fb;
-    --violet: #4a3aa7;
-    --code-bg: #f0f2ee;
-    --code-ink: #2b332d;
-    --bar-naive: #2a78d6;
-    --bar-opt: #1baf7a;
-    --shadow: 0 1px 2px rgba(21,25,21,.05), 0 8px 24px -12px rgba(21,25,21,.10);
-  }
+<div id="progress" aria-hidden="true"></div>
+<a class="skip" href="#main">본문으로 건너뛰기</a>
+<header class="hero">
+  <div class="hero-inner">
+    <p class="eyebrow">백엔드 개발자 · 신입</p>
+    <h1>신승경 <span class="role">· Backend</span></h1>
+    <p class="tagline">장애가 났을 때 <em>어디까지 복구되는지 말할 수 있는</em>
+      시스템을 만드는 데 관심이 있다.</p>
+    <p class="hero-lede">온라인 저지를 혼자 만들면서, 대회 중 제출이 몰릴 때 데이터가
+      유실되거나 실시간 순위가 최종 순위와 어긋나는 문제를 주제로 삼았다.
+      메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서 피할 수 없으므로
+      그것을 전제로 설계했다.</p>
 
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-  body {
-    margin: 0;
-    background: var(--page);
-    color: var(--ink);
-    font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 16px;
-    line-height: 1.72;
-    -webkit-font-smoothing: antialiased;
-  }
-  .mono, code, pre {
-    font-family: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Nanum Gothic Coding", monospace;
-  }
+    <ul class="metrics">
+      <li class="metric">
+        <span class="cond">제출 1,000/s × 150초</span>
+        <span class="fig">127,687건 <small>전량 채점</small></span>
+        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 배수 10.4분</span>
+      </li>
+      <li class="metric">
+        <span class="cond">judge 노드 1대 SIGKILL</span>
+        <span class="fig">max 9.8<small>초</small></span>
+        <span class="note">4초 만에 미확인 메시지 회수 · end-to-end 기준</span>
+      </li>
+      <li class="metric">
+        <span class="cond">Redis 스코어보드 롤백</span>
+        <span class="fig">2초대 <small>수렴</small></span>
+        <span class="note">되감긴 offset + 1부터 replay · 상한 관찰값</span>
+      </li>
+      <li class="metric">
+        <span class="cond">순위 정합성</span>
+        <span class="fig">순서·중복 <small>무관</small></span>
+        <span class="note">어떤 순서로 적용해도 수렴 · 회귀 테스트로 고정</span>
+      </li>
+    </ul>
+    <p class="metrics-caveat">단일 호스트에서, 부하 발생기와 서버가 자원을 나눠 쓰는
+      조건으로 쟀다. <b>절대 성능이 아니라 구조가 어디서 막히는가의 증거</b>로 읽어야 한다 —
+      무엇을 재지 않았는지는 <a href="#측정-전제">측정 전제</a>에 적었다.</p>
 
-  .wrap { max-width: 880px; margin: 0 auto; padding: 0 24px; }
-
-  /* ---- sticky nav ---- */
-  .nav {
-    position: sticky; top: 0; z-index: 50;
-    background: color-mix(in srgb, var(--page) 88%, transparent);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
-  }
-  .nav-inner {
-    max-width: 880px; margin: 0 auto; padding: 10px 24px;
-    display: flex; align-items: center; gap: 18px; overflow-x: auto;
-  }
-  .nav-logo {
-    font-size: 12.5px; font-weight: 700; letter-spacing: .06em;
-    color: var(--accent-ink); white-space: nowrap;
-  }
-  .nav a {
-    font-size: 13px; color: var(--ink-2); text-decoration: none;
-    white-space: nowrap; padding: 3px 2px; border-radius: 4px;
-  }
-  .nav a:hover, .nav a:focus-visible { color: var(--accent-ink); }
-  .nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .nav .num { font-size: 11px; color: var(--muted); margin-right: 2px; }
-
-  /* ---- hero ---- */
-  .hero { padding: 72px 0 40px; }
-  .eyebrow {
-    font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
-    color: var(--accent-ink); font-weight: 600; margin: 0 0 14px;
-  }
-  .eyebrow::before { content: "$ "; color: var(--muted); }
-  h1 {
-    font-size: clamp(30px, 5.4vw, 46px); line-height: 1.22;
-    letter-spacing: -0.025em; font-weight: 800; margin: 0 0 18px;
-    text-wrap: balance;
-  }
-  h1 .thin { color: var(--ink-2); font-weight: 600; }
-  .lede { font-size: 17px; color: var(--ink-2); max-width: 40em; margin: 0 0 26px; text-wrap: pretty; }
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 34px; }
-  .chip {
-    font-size: 12.5px; font-weight: 600; padding: 5px 12px;
-    border: 1px solid var(--line-strong); border-radius: 999px;
-    color: var(--ink-2); background: var(--card);
-  }
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-  @media (max-width: 620px) { .stats { grid-template-columns: 1fr; } }
-  .stat {
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px 18px; box-shadow: var(--shadow);
-  }
-  .stat .k { font-size: 12px; color: var(--muted); letter-spacing: .05em; margin-bottom: 4px; }
-  .stat .v { font-size: 24px; font-weight: 750; letter-spacing: -0.02em; }
-  .stat .v small { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-left: 4px; }
-
-  /* ---- sections ---- */
-  section { padding: 56px 0 8px; }
-  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
-  .sec-num {
-    font-size: 13px; font-weight: 700; color: var(--accent-ink);
-    letter-spacing: .08em;
-  }
-  h2 {
-    font-size: clamp(23px, 3.4vw, 30px); font-weight: 750; letter-spacing: -0.02em;
-    margin: 0; text-wrap: balance;
-  }
-  .sec-sub { color: var(--ink-2); margin: 8px 0 28px; max-width: 44em; text-wrap: pretty; }
-  h3 { font-size: 18.5px; font-weight: 700; letter-spacing: -0.01em; margin: 34px 0 10px; }
-  h4 { font-size: 15.5px; font-weight: 700; margin: 22px 0 8px; }
-  p { margin: 0 0 14px; max-width: 46em; }
-  ul, ol { margin: 0 0 16px; padding-left: 22px; }
-  li { margin-bottom: 6px; }
-  li::marker { color: var(--muted); }
-  strong { font-weight: 700; }
-  hr.sep { border: 0; border-top: 1px solid var(--line); margin: 48px 0 0; }
-
-  code {
-    font-size: .88em; background: var(--code-bg); color: var(--code-ink);
-    padding: 1.5px 6px; border-radius: 5px;
-  }
-  pre {
-    background: var(--code-bg); color: var(--code-ink);
-    border: 1px solid var(--line); border-radius: 10px;
-    padding: 14px 16px; font-size: 13px; line-height: 1.6;
-    overflow-x: auto; margin: 0 0 16px;
-  }
-  pre code { background: none; padding: 0; font-size: inherit; }
-  pre .kw { color: var(--blue); font-weight: 600; }
-  pre .cm { color: var(--muted); }
-  pre .str { color: var(--accent-ink); }
-
-  /* ---- badges (verdicts) ---- */
-  .badge {
-    display: inline-flex; align-items: center; gap: 5px;
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 11px; font-weight: 700; letter-spacing: .06em;
-    padding: 3px 9px; border-radius: 6px; white-space: nowrap;
-  }
-  .badge.ac { background: var(--accent-soft); color: var(--accent-ink); }
-  .badge.wa { background: color-mix(in srgb, var(--queue) 13%, transparent); color: var(--queue); }
-  .badge.rt { background: var(--card-2); color: var(--ink-2); }
-  .badge.mq { background: var(--queue-soft); color: var(--queue); }
-
-  /* ---- timeline ---- */
-  .timeline { position: relative; margin-top: 8px; }
-  .timeline::before {
-    content: ""; position: absolute; left: 21px; top: 10px; bottom: 10px;
-    width: 2px; background: var(--line-strong); border-radius: 2px;
-  }
-  .tl-item { position: relative; padding: 0 0 30px 62px; }
-  .tl-node {
-    position: absolute; left: 0; top: 0;
-    width: 44px; height: 44px; border-radius: 12px;
-    background: var(--card); border: 1.5px solid var(--line-strong);
-    display: flex; align-items: center; justify-content: center;
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 13px; font-weight: 700; color: var(--ink-2);
-    box-shadow: var(--shadow);
-  }
-  .tl-item.final .tl-node { border-color: var(--accent); color: var(--accent-ink); background: var(--accent-soft); }
-  .tl-card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-    padding: 20px 22px; box-shadow: var(--shadow);
-  }
-  .tl-item.final > .tl-card { border-color: color-mix(in srgb, var(--accent) 42%, var(--line)); }
-  .tl-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 6px; }
-  .tl-head h3 { margin: 0; font-size: 17.5px; }
-  .tl-desc { color: var(--ink-2); font-size: 14.5px; margin-bottom: 12px; }
-
-  /* flow chips */
-  .flow {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-    margin: 12px 0 14px; font-family: "JetBrains Mono", Consolas, monospace;
-  }
-  .flow .fbox {
-    font-size: 11.5px; font-weight: 600; color: var(--ink-2);
-    background: var(--card-2); border: 1px solid var(--line);
-    padding: 4px 10px; border-radius: 7px; white-space: nowrap;
-  }
-  .flow .fbox.db { border-color: color-mix(in srgb, var(--blue) 45%, var(--line)); color: var(--blue); }
-  .flow .fbox.q  { border-color: color-mix(in srgb, var(--queue) 45%, var(--line)); color: var(--queue); }
-  .flow .fbox.hot { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent-ink); }
-  .flow .arr { color: var(--muted); font-size: 12px; }
-
-  .prob { margin: 12px 0 2px; }
-  .prob dt {
-    font-size: 12px; font-weight: 700; letter-spacing: .08em;
-    color: var(--queue); margin-bottom: 6px;
-  }
-  .prob dd { margin: 0; }
-  .prob ul { margin-bottom: 4px; }
-  .prob li { font-size: 14.5px; color: var(--ink-2); }
-
-  /* ---- two-col cards ---- */
-  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 18px 0; }
-  @media (max-width: 680px) { .duo { grid-template-columns: 1fr; } }
-  .opt-card {
-    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-    padding: 18px 20px; box-shadow: var(--shadow); position: relative;
-  }
-  .opt-card.picked { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .opt-card h4 { margin: 0 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .opt-card p, .opt-card li { font-size: 14.5px; color: var(--ink-2); }
-  .opt-card .lbl {
-    font-size: 11px; font-weight: 700; letter-spacing: .1em;
-    color: var(--muted); display: block; margin: 12px 0 4px;
-  }
-  .opt-card .lbl.good { color: var(--accent-ink); }
-  .opt-card .lbl.bad { color: var(--queue); }
-  .opt-card ul { padding-left: 18px; margin-bottom: 2px; }
-
-  /* ---- role grid ---- */
-  .roles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0 8px; }
-  @media (max-width: 620px) { .roles { grid-template-columns: 1fr; } }
-  .role {
-    border: 1px solid var(--line); border-left-width: 3px; border-radius: 10px;
-    background: var(--card); padding: 13px 16px;
-  }
-  .role .rname {
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 12.5px; font-weight: 700; letter-spacing: .04em; margin-bottom: 3px;
-  }
-  .role .rdesc { font-size: 14px; color: var(--ink-2); }
-  .role.r-db { border-left-color: var(--blue); } .role.r-db .rname { color: var(--blue); }
-  .role.r-mq { border-left-color: var(--queue); } .role.r-mq .rname { color: var(--queue); }
-  .role.r-redis { border-left-color: var(--violet); } .role.r-redis .rname { color: var(--violet); }
-  .role.r-outbox { border-left-color: var(--accent); } .role.r-outbox .rname { color: var(--accent-ink); }
-
-  /* ---- architecture diagram ---- */
-  .diagram-wrap {
-    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    box-shadow: var(--shadow); padding: 20px 12px 8px; margin: 22px 0 10px;
-    overflow-x: auto;
-  }
-  .diagram-wrap svg { display: block; min-width: 760px; width: 100%; height: auto; }
-  .diagram-cap { font-size: 13px; color: var(--muted); text-align: center; padding: 6px 16px 14px; }
-  .arch-box { fill: var(--card-2); stroke: var(--line-strong); stroke-width: 1.2; rx: 10; }
-  .arch-box.b-db { stroke: var(--blue); fill: var(--blue-soft); }
-  .arch-box.b-mq { stroke: var(--queue); fill: var(--queue-soft); }
-  .arch-box.b-redis { stroke: var(--violet); fill: color-mix(in srgb, var(--violet) 10%, var(--card)); }
-  .arch-label { font-family: "JetBrains Mono", Consolas, monospace; font-size: 12.5px; font-weight: 700; fill: var(--ink); }
-  .arch-sub { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10px; fill: var(--ink-2); }
-  .arch-edge { stroke: var(--line-strong); stroke-width: 1.5; fill: none; }
-  .arch-edge.hot { stroke: var(--accent); }
-  .arch-edge.dashed { stroke-dasharray: 4 4; }
-  .arch-elabel { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10.5px; fill: var(--ink-2); }
-  .arch-step { fill: var(--accent); }
-  .arch-stepnum { font-family: "JetBrains Mono", Consolas, monospace; font-size: 10px; font-weight: 700; fill: var(--page); }
-
-  .steps { counter-reset: step; list-style: none; padding: 0; margin: 20px 0 8px; }
-  .steps li {
-    counter-increment: step; position: relative;
-    padding: 0 0 12px 40px; font-size: 15px; color: var(--ink-2);
-  }
-  .steps li::before {
-    content: counter(step); position: absolute; left: 0; top: 1px;
-    width: 24px; height: 24px; border-radius: 50%;
-    background: var(--accent-soft); color: var(--accent-ink);
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 12px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .steps li strong { color: var(--ink); }
-
-  /* ---- deadlock lock-order visual ---- */
-  .lockviz {
-    display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: stretch;
-    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-    padding: 16px 18px; margin: 14px 0 18px;
-  }
-  @media (max-width: 560px) { .lockviz { grid-template-columns: 1fr; } .lockviz .vs { display: none; } }
-  .lockviz .tx { font-size: 13.5px; }
-  .lockviz .txname {
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
-    color: var(--muted); margin-bottom: 8px;
-  }
-  .lockviz .lock-chain { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-  .lockviz .lk {
-    font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; font-weight: 600;
-    padding: 4px 9px; border-radius: 6px; border: 1px solid var(--line-strong);
-    background: var(--card-2); color: var(--ink-2); white-space: nowrap;
-  }
-  .lockviz .lk.held { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); color: var(--accent-ink); }
-  .lockviz .lk.wait { border-color: color-mix(in srgb, var(--queue) 55%, var(--line)); color: var(--queue); border-style: dashed; }
-  .lockviz .vs {
-    display: flex; align-items: center; font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 11px; font-weight: 700; color: var(--queue);
-  }
-  .lockviz .cap { grid-column: 1 / -1; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
-
-  /* ---- benchmark chart ---- */
-  .bench {
-    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
-    box-shadow: var(--shadow); padding: 22px 24px 16px; margin: 22px 0 12px;
-  }
-  .bench-title { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
-  .bench-sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
-  .legend { display: flex; gap: 18px; margin-bottom: 18px; flex-wrap: wrap; }
-  .legend .li { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--ink-2); }
-  .legend .sw { width: 12px; height: 12px; border-radius: 3px; }
-  .sw.naive { background: var(--bar-naive); }
-  .sw.opt { background: var(--bar-opt); }
-
-  .bench-group { margin-bottom: 22px; }
-  .bench-group:last-child { margin-bottom: 6px; }
-  .bg-name {
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 12px; font-weight: 700; letter-spacing: .05em;
-    color: var(--ink); margin-bottom: 10px;
-  }
-  .bg-name small { font-weight: 500; color: var(--muted); letter-spacing: 0; }
-  .brow { display: grid; grid-template-columns: 64px 1fr; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .brow .pos { font-size: 12.5px; color: var(--ink-2); font-weight: 600; text-align: right; }
-  .bars { display: flex; flex-direction: column; gap: 3px; }
-  .barline { display: flex; align-items: center; gap: 8px; min-height: 16px; }
-  .bar {
-    height: 13px; border-radius: 0 4px 4px 0; min-width: 3px;
-    transition: opacity .15s ease;
-  }
-  .barline:hover .bar { opacity: .82; }
-  .bar.naive { background: var(--bar-naive); }
-  .bar.opt { background: var(--bar-opt); }
-  .bval {
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 11.5px; font-weight: 600; color: var(--ink-2);
-    white-space: nowrap; font-variant-numeric: tabular-nums;
-  }
-  .speed {
-    font-family: "JetBrains Mono", Consolas, monospace;
-    font-size: 10.5px; font-weight: 700; color: var(--accent-ink);
-    background: var(--accent-soft); padding: 1px 7px; border-radius: 999px; white-space: nowrap;
-  }
-  .speed.neg { color: var(--queue); background: var(--queue-soft); }
-  .bench-axis { font-size: 11.5px; color: var(--muted); text-align: right; margin-top: 10px; }
-
-  table {
-    width: 100%; border-collapse: collapse; font-size: 14px; margin: 14px 0 6px;
-    font-variant-numeric: tabular-nums;
-  }
-  .table-wrap { overflow-x: auto; }
-  th, td { padding: 9px 12px; border-bottom: 1px solid var(--line); text-align: right; }
-  th:first-child, td:first-child { text-align: left; }
-  th { font-size: 12px; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-  td:first-child { font-weight: 600; }
-  td .mono { font-size: 13px; }
-
-  /* ---- callout ---- */
-  .callout {
-    border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
-    background: color-mix(in srgb, var(--accent-soft) 55%, var(--card));
-    border-radius: 12px; padding: 16px 20px; margin: 18px 0;
-  }
-  .callout p { margin-bottom: 6px; font-size: 15px; }
-  .callout p:last-child { margin-bottom: 0; }
-
-  footer {
-    margin-top: 72px; border-top: 1px solid var(--line);
-    padding: 28px 0 48px; font-size: 13px; color: var(--muted);
-    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;
-  }
-</style>
-
-<nav class="nav" aria-label="섹션 이동">
-  <div class="nav-inner">
-    <span class="nav-logo mono">judge --portfolio</span>
-    <a href="#pipeline"><span class="num mono">01</span>제출 파이프라인</a>
-    <a href="#deadlock"><span class="num mono">02</span>데드락</a>
-    <a href="#scoreboard"><span class="num mono">03</span>스코어보드 회복</a>
-    <a href="#ranking"><span class="num mono">04</span>랭킹 조회</a>
-  </div>
-</nav>
-
-<header class="hero wrap">
-  <p class="eyebrow mono">online judge — backend design record</p>
-  <h1>대회 트래픽을 버티는<br>온라인 저지 <span class="thin">채점 파이프라인</span></h1>
-  <p class="lede">
-    사용자가 제출한 코드를 채점해 결과를 알려주는 온라인 저지.
-    짧은 시간에 제출이 집중되는 <strong>대회 + 실시간 스코어보드</strong>를 중심으로,
-    제출 파이프라인을 V0부터 V5까지 6번 재설계하며 유실 방지·중복 처리·복구를 검증한 기록이다.
-  </p>
-  <div class="chips">
-    <span class="chip">Java</span>
-    <span class="chip">Spring</span>
-    <span class="chip">MySQL</span>
-    <span class="chip">Redis</span>
-    <span class="chip">RabbitMQ</span>
-  </div>
-  <div class="stats">
-    <div class="stat">
-      <div class="k mono">PEAK LOAD</div>
-      <div class="v mono">1,000<small>rps</small></div>
-    </div>
-    <div class="stat">
-      <div class="k mono">JUDGE API AVG</div>
-      <div class="v mono">10<small>ms</small></div>
-    </div>
-    <div class="stat">
-      <div class="k mono">JUDGE API P999</div>
-      <div class="v mono">2<small>s (timeout)</small></div>
-    </div>
+    <ul class="contact">
+      <li><a href="mailto:tmdrud049@gmail.com"><span class="k">이메일</span> tmdrud049@gmail.com</a></li>
+      <li><a href="https://github.com/tmdrud0/web" target="_blank" rel="noopener">
+        <span class="k">저장소</span> github.com/tmdrud0/web</a></li>
+      <li><a href="https://github.com/tmdrud0" target="_blank" rel="noopener">
+        <span class="k">GitHub</span> tmdrud0</a></li>
+      <li><a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">
+        <span class="k">Codeforces</span> Candidate Master</a></li>
+      <li><button class="btn" type="button" onclick="window.print()">PDF로 저장</button></li>
+    </ul>
   </div>
 </header>
-
-<main class="wrap">
-
-<!-- ================= 01 PIPELINE ================= -->
-<section id="pipeline">
-  <div class="sec-head">
-    <span class="sec-num mono">01</span>
-    <h2>대회 제출 파이프라인</h2>
+<div class="shell">
+<nav class="toc" aria-label="목차">
+<h2>목차</h2>
+<ol>
+<li><a href="#핵심-역량">핵심 역량</a>
+</li>
+<li><a href="#ch1">1. 온라인 저지</a>
+<ol class="sub">
+<li><a href="#측정-전제" data-ch="ch1">측정 전제</a></li>
+</ol>
+</li>
+<li><a href="#ch2">2. 대회 제출 파이프라인</a>
+<ol class="sub">
+<li><a href="#무엇을-얻고-무엇을-지불했나" data-ch="ch2">무엇을 얻고 무엇을 지불했나</a></li>
+<li><a href="#최대-처리량은-하나가-아니다" data-ch="ch2">"최대 처리량"은 하나가 아니다</a></li>
+<li><a href="#prefetch-여유가-있을-때-꼬리가-증폭된다" data-ch="ch2">prefetch: 여유가 있을 때 꼬리가 증폭된다</a></li>
+<li><a href="#백로그는-병목-바로-앞에만-앉는다" data-ch="ch2">백로그는 병목 바로 앞에만 앉는다</a></li>
+<li><a href="#insert-ignore-뒤에-숨는-누락" data-ch="ch2">INSERT IGNORE 뒤에 숨는 누락</a></li>
+</ol>
+</li>
+<li><a href="#ch3">3. 스코어보드 전달·복구 경로</a>
+<ol class="sub">
+<li><a href="#무엇을-지불했나" data-ch="ch3">무엇을 지불했나</a></li>
+<li><a href="#복구-제어-흐름" data-ch="ch3">복구 제어 흐름</a></li>
+<li><a href="#다시-흘려보내도-안전한가" data-ch="ch3">다시 흘려보내도 안전한가</a></li>
+</ol>
+</li>
+<li><a href="#ch4">4. 남은 한계</a>
+</li>
+<li><a href="#보조-자료">보조 자료</a>
+</li>
+</ol>
+<div class="foot"><a href="measurements.html">측정 기록 →</a><br><a href="https://github.com/tmdrud0/web" target="_blank" rel="noopener">저장소 →</a></div>
+</nav>
+<main class="doc" id="main">
+<section class="chapter" id="핵심-역량">
+  <p class="chapter-no">STRENGTHS</p>
+  <h2>핵심 역량</h2>
+  <p class="chapter-lede">스스로 확인한 것만 적는다. 각 항목은 아래 본문에서
+    <strong>어떤 실험으로 그렇게 말할 수 있는지</strong>까지 이어진다.</p>
+  <div class="strengths">
+    <article class="strength">
+      <h3>정합성을 순서와 중복에 의존하지 않게 설계한다.</h3>
+      <p>채점 완료 순서는 제출 순서와 다르다. 누적 방식 스코어보드는 이것 때문에 대회 중
+        참가자가 본 순위와 최종 순위를 다르게 만들었다. 누적을 버리고 매번 재계산하도록 바꿨다.</p>
+      <a class="ref" href="#다시-흘려보내도-안전한가">→ 3장 · 다시 흘려보내도 안전한가</a>
+    </article>
+    <article class="strength">
+      <h3>측정 조건을 의심하고, 근거로 쓸 수 있는 수치와 없는 수치를 구분한다.</h3>
+      <p><code>prefetch</code>를 올렸을 때의 꼬리 악화는 포화 상태에서 재면 +25%로 보이고,
+        포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 함께 키워 효과를 희석하기
+        때문이다. 부하 발생기와 서버가 같은 호스트를 나눠 쓰므로 절대 처리량은 용량 수치로
+        쓰지 않고, 모든 비교는 짝실험으로 설계했다.</p>
+      <a class="ref" href="#prefetch-여유가-있을-때-꼬리가-증폭된다">→ 2장 · prefetch 짝실험</a>
+    </article>
+    <article class="strength">
+      <h3>내가 틀린 것을 측정으로 찾아낸다.</h3>
+      <p>judge CPU가 72–78%로 관측돼 CPU 한도가 병목이라고 판단했다. 두 런의 CPU 시계열을
+        비교하니 JIT 컴파일이 감쇠하는 곡선이었고, 샘플러의 “피크 CPU”가 그 초반 스파이크를
+        집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
+      <a class="ref" href="#최대-처리량은-하나가-아니다">→ 2장 · “최대 처리량”은 하나가 아니다</a>
+    </article>
   </div>
-  <p class="sec-sub">
-    요구사항: ① 제출 POST가 성공으로 반환됐다면 실제로도 성공이어야 한다.
-    ② <code>(user, problem, codeHash)</code>는 중복 없이 처리한다.
-    평균 10ms이지만 p999가 2초까지 벌어지는 채점 API 앞에서, 이 두 가지를 지키는 구조를 찾는 과정이다.
-  </p>
-
-  <h3>최종 아키텍처 (V5)</h3>
-  <div class="diagram-wrap">
-    <svg viewBox="0 0 920 330" role="img" aria-label="V5 최종 아키텍처: 클라이언트에서 API 서버, MySQL outbox, RabbitMQ quorum queue, consumer, 채점 API, Redis 스코어보드로 이어지는 흐름">
-      <defs>
-        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="var(--line-strong)"/>
-        </marker>
-        <marker id="arr-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/>
-        </marker>
-      </defs>
-
-      <!-- top lane boxes -->
-      <rect class="arch-box" x="16" y="40" width="100" height="52" rx="10"/>
-      <text class="arch-label" x="66" y="63" text-anchor="middle">클라이언트</text>
-      <text class="arch-sub" x="66" y="79" text-anchor="middle">제출 POST</text>
-
-      <rect class="arch-box" x="166" y="40" width="118" height="52" rx="10"/>
-      <text class="arch-label" x="225" y="63" text-anchor="middle">API 서버</text>
-      <text class="arch-sub" x="225" y="79" text-anchor="middle">Spring</text>
-
-      <rect class="arch-box" x="334" y="40" width="128" height="52" rx="10"/>
-      <text class="arch-label" x="398" y="63" text-anchor="middle">Outbox Relay</text>
-      <text class="arch-sub" x="398" y="79" text-anchor="middle">발행 워커</text>
-
-      <rect class="arch-box b-mq" x="512" y="34" width="160" height="64" rx="10"/>
-      <text class="arch-label" x="592" y="59" text-anchor="middle" fill="var(--queue)">RabbitMQ</text>
-      <text class="arch-sub" x="592" y="75" text-anchor="middle">durable quorum queue</text>
-      <text class="arch-sub" x="592" y="89" text-anchor="middle">persistent · 3+ nodes</text>
-
-      <rect class="arch-box" x="722" y="40" width="108" height="52" rx="10"/>
-      <text class="arch-label" x="776" y="63" text-anchor="middle">Consumer</text>
-      <text class="arch-sub" x="776" y="79" text-anchor="middle">prefetch · 멱등</text>
-
-      <rect class="arch-box" x="722" y="140" width="108" height="52" rx="10"/>
-      <text class="arch-label" x="776" y="163" text-anchor="middle">채점 API</text>
-      <text class="arch-sub" x="776" y="179" text-anchor="middle">avg 10ms · p999 2s</text>
-
-      <!-- bottom lane -->
-      <rect class="arch-box b-db" x="166" y="232" width="428" height="72" rx="10"/>
-      <text class="arch-label" x="380" y="256" text-anchor="middle" fill="var(--blue)">MySQL — 원본(source of truth)</text>
-      <text class="arch-sub" x="380" y="274" text-anchor="middle">contest_submission · outbox · submission_result</text>
-      <text class="arch-sub" x="380" y="290" text-anchor="middle">unique(submissionId, judgeVersion)</text>
-
-      <rect class="arch-box b-redis" x="722" y="240" width="108" height="52" rx="10"/>
-      <text class="arch-label" x="776" y="263" text-anchor="middle" fill="var(--violet)">Redis</text>
-      <text class="arch-sub" x="776" y="279" text-anchor="middle">스코어보드 캐시</text>
-
-      <!-- edges -->
-      <line class="arch-edge" x1="116" y1="66" x2="160" y2="66" marker-end="url(#arr)"/>
-
-      <!-- 1: API -> DB (same tx) -->
-      <path class="arch-edge hot" d="M225,92 L225,228" marker-end="url(#arr-hot)"/>
-      <circle class="arch-step" cx="225" cy="130" r="10"/>
-      <text class="arch-stepnum" x="225" y="133.5" text-anchor="middle">1</text>
-      <text class="arch-elabel" x="238" y="127">제출 + outbox</text>
-      <text class="arch-elabel" x="238" y="141">같은 DB 트랜잭션</text>
-
-      <!-- 2: DB -> relay (read) -->
-      <path class="arch-edge dashed" d="M398,228 L398,96" marker-end="url(#arr)"/>
-      <text class="arch-elabel" x="406" y="150">outbox 폴링</text>
-
-      <!-- 2: relay -> MQ publish -->
-      <line class="arch-edge hot" x1="462" y1="58" x2="506" y2="58" marker-end="url(#arr-hot)"/>
-      <circle class="arch-step" cx="484" cy="42" r="10"/>
-      <text class="arch-stepnum" x="484" y="45.5" text-anchor="middle">2</text>
-
-      <!-- 3: MQ -> relay confirm -->
-      <line class="arch-edge dashed" x1="506" y1="80" x2="462" y2="80" marker-end="url(#arr)"/>
-      <circle class="arch-step" cx="484" cy="104" r="10"/>
-      <text class="arch-stepnum" x="484" y="107.5" text-anchor="middle">3</text>
-      <text class="arch-elabel" x="484" y="128" text-anchor="middle">publisher confirm</text>
-      <text class="arch-elabel" x="484" y="142" text-anchor="middle">→ PUBLISHED</text>
-
-      <!-- 4: MQ -> consumer -->
-      <line class="arch-edge hot" x1="672" y1="66" x2="716" y2="66" marker-end="url(#arr-hot)"/>
-      <circle class="arch-step" cx="694" cy="48" r="10"/>
-      <text class="arch-stepnum" x="694" y="51.5" text-anchor="middle">4</text>
-
-      <!-- consumer -> judge api -->
-      <path class="arch-edge" d="M776,92 L776,134" marker-end="url(#arr)"/>
-      <text class="arch-elabel" x="786" y="117">채점 호출</text>
-
-      <!-- 5: consumer(judge result) -> DB -->
-      <path class="arch-edge hot" d="M722,166 C620,166 600,180 597,226" marker-end="url(#arr-hot)"/>
-      <circle class="arch-step" cx="640" cy="172" r="10"/>
-      <text class="arch-stepnum" x="640" y="175.5" text-anchor="middle">5</text>
-      <text class="arch-elabel" x="560" y="196" text-anchor="middle">결과 + 스코어보드</text>
-      <text class="arch-elabel" x="560" y="210" text-anchor="middle">outbox 저장 (TX)</text>
-
-      <!-- 6: consumer -> MQ manual ack -->
-      <path class="arch-edge dashed" d="M722,52 C700,20 650,14 618,30" marker-end="url(#arr)"/>
-      <circle class="arch-step" cx="668" cy="18" r="10"/>
-      <text class="arch-stepnum" x="668" y="21.5" text-anchor="middle">6</text>
-      <text class="arch-elabel" x="722" y="16">commit 후 manual ACK</text>
-
-      <!-- 7: DB -> redis -->
-      <line class="arch-edge" x1="594" y1="266" x2="716" y2="266" marker-end="url(#arr)"/>
-      <circle class="arch-step" cx="655" cy="250" r="10"/>
-      <text class="arch-stepnum" x="655" y="253.5" text-anchor="middle">7</text>
-      <text class="arch-elabel" x="655" y="284" text-anchor="middle">outbox → 스코어보드</text>
-    </svg>
-  </div>
-  <p class="diagram-cap">ACK 전에 consumer가 죽으면 메시지는 자동 재전달되고, DB unique constraint가 중복 반영을 막는다.</p>
-
-  <ol class="steps">
-    <li><strong><code>contest_submission</code>과 채점 발행용 outbox를 같은 DB 트랜잭션</strong>으로 저장한다.</li>
-    <li>outbox relay가 <strong>RabbitMQ quorum queue에 메시지를 발행</strong>한다.</li>
-    <li><strong>publisher confirm을 받은 시점</strong>에 outbox를 <code>PUBLISHED</code>로 표시한다 — 완료의 의미는 "채점 완료"가 아니라 <strong>"RabbitMQ가 작업을 인수함"</strong>이다.</li>
-    <li>consumer는 메시지를 받아 직접 <strong>채점 API를 호출</strong>한다.</li>
-    <li>채점 결과와 스코어보드 outbox를 <strong>DB 트랜잭션으로 저장</strong>한다.</li>
-    <li>DB commit이 성공한 후 <strong>manual ACK</strong>를 보낸다.</li>
-    <li>consumer 프로세스나 connection/channel이 ACK 전에 종료되면 <strong>메시지는 다시 전달</strong>된다.</li>
-  </ol>
-
-  <h3>진화 과정 — 6번의 재설계</h3>
-  <div class="timeline">
-
-    <div class="tl-item">
-      <div class="tl-node">V0</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>event + async</h3><span class="badge wa">유실 발생</span></div>
-        <p class="tl-desc">Spring의 event + async 구조. POST 시 DB에 저장하고 이벤트 발행, 리스너가 채점 API를 호출해 결과를 갱신한다.</p>
-        <div class="flow">
-          <span class="fbox">POST</span><span class="arr">→</span>
-          <span class="fbox db">DB insert</span><span class="arr">→</span>
-          <span class="fbox">event</span><span class="arr">→</span>
-          <span class="fbox">listener</span><span class="arr">→</span>
-          <span class="fbox">채점 API</span><span class="arr">→</span>
-          <span class="fbox db">UPDATE</span>
-        </div>
-        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
-          <li>중간 프로세스가 죽으면 제출이 유실된다 — 요구사항 ① 위반.</li>
-          <li>고부하에서 쓰루풋이 낮다.</li>
-        </ul></dd></dl>
-      </div>
-    </div>
-
-    <div class="tl-item">
-      <div class="tl-node">V1</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>JPA batch insert</h3><span class="badge rt">부분 개선</span></div>
-        <p class="tl-desc">insert를 큐에 모아 같은 EntityManager에서 persist — MySQL batch rewrite를 활용해 POST 반환까지의 쓰루풋을 개선했다.</p>
-        <div class="flow">
-          <span class="fbox">POST</span><span class="arr">→</span>
-          <span class="fbox hot">in-mem queue</span><span class="arr">→</span>
-          <span class="fbox db">batch persist</span><span class="arr">→</span>
-          <span class="fbox">채점 API</span><span class="arr">→</span>
-          <span class="fbox db">UPDATE</span>
-        </div>
-        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
-          <li>레이턴시 증가. batch 내 한 건 실패 시 포함된 insert 전체가 실패.</li>
-          <li>채점 구간은 여전히 느리다.</li>
-        </ul></dd></dl>
-      </div>
-    </div>
-
-    <div class="tl-item">
-      <div class="tl-node">V2</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>judge one transaction</h3><span class="badge wa">지연 전파</span></div>
-        <p class="tl-desc">채점 쓰루풋 개선을 위해 한 트랜잭션에서 <code>SKIP LOCKED</code>로 여러 건을 읽고, 스레드풀에서 API 호출 후 한 번에 insert.</p>
-        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
-          <li>트랜잭션 범위가 너무 크다.</li>
-          <li>가끔 오는 p999(2초) 제출 하나가 <strong>트랜잭션에 묶인 전체 batch에 지연을 전파</strong>한다.</li>
-        </ul></dd></dl>
-      </div>
-    </div>
-
-    <div class="tl-item">
-      <div class="tl-node">V3</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>judge claim</h3><span class="badge rt">1차 채택 → 한계</span></div>
-        <p class="tl-desc">
-          submission과 result 테이블을 분리하고 과정 사이에 큐를 넣어 트랜잭션을 짧게 유지. p999 지연이 다른 제출로 퍼지지 않는다.
-          복구·중복 방지를 위해 claim 칼럼(<code>claim_key</code>, <code>claimed_at</code>, <code>status</code>)을 두고,
-          오래된 미완료 claim은 sweeper가 다시 큐에 넣는다.
-        </p>
-        <div class="flow">
-          <span class="fbox db">claim UPDATE</span><span class="arr">→</span>
-          <span class="fbox hot">queue</span><span class="arr">→</span>
-          <span class="fbox">채점 API</span><span class="arr">→</span>
-          <span class="fbox hot">queue</span><span class="arr">→</span>
-          <span class="fbox db">result batch insert</span>
-        </div>
-        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
-          <li>p999가 평균의 200배인 상황에서 <code>claimed_at</code> 기반 실패 판단은 딜레마다 —
-            <strong>timeout을 짧게 잡으면 중복 채점이 늘고, 길게 잡으면 장애 복구가 늦어진다.</strong></li>
-        </ul></dd></dl>
-      </div>
-    </div>
-
-    <div class="tl-item">
-      <div class="tl-node">V4</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>DB outbox + Kafka</h3><span class="badge wa">복잡도 초과</span></div>
-        <p class="tl-desc">
-          append-only log처럼 쓰이는 submission에 Kafka를 도입. claim이 시간 변동이 큰 채점 API 앞이 아니라
-          Kafka로 보내는 짧은 구간 앞으로 이동해 timeout 설정이 수월해졌다. 유니크 제약 보장을 위해 DB 저장은 유지.
-        </p>
-        <div class="flow">
-          <span class="fbox db">DB insert</span><span class="arr">→</span>
-          <span class="fbox db">claim</span><span class="arr">→</span>
-          <span class="fbox q">Kafka</span><span class="arr">→</span>
-          <span class="fbox">채점 API</span><span class="arr">→</span>
-          <span class="fbox db">result</span><span class="arr">→</span>
-          <span class="fbox q">offset commit 관리</span>
-        </div>
-        <dl class="prob"><dt>PROBLEM</dt><dd><ul>
-          <li>같은 partition 앞쪽의 느린 작업이 뒤 작업의 commit을 막는다 — 완료 offset을 별도 저장하고
-            연속 완료 지점을 계산하는 <strong>수동 commit 관리</strong>가 필요했다.</li>
-          <li>DB claim과 offset commit을 함께 관리하며 코드 복잡도가 크게 상승, 채점 쓰루풋도 감소.</li>
-        </ul></dd></dl>
-      </div>
-    </div>
-
-    <div class="tl-item final">
-      <div class="tl-node">V5</div>
-      <div class="tl-card">
-        <div class="tl-head"><h3>RabbitMQ 작업 큐</h3><span class="badge ac">ACCEPTED</span></div>
-        <p class="tl-desc">
-          채점은 과거 이벤트를 여러 consumer가 재생하는 <strong>스트림이 아니라</strong>, 하나의 작업을 하나의 worker가
-          가져가 처리하고 성공 여부를 개별적으로 알리는 <strong>작업 큐</strong>다. 일부 채점만 최대 2초까지 느려질 수 있으므로,
-          완료 순서가 달라져도 각각 독립적으로 완료 처리할 수 있어야 한다.
-        </p>
-        <p class="tl-desc">
-          Kafka Share는 레코드별 ACK와 재전달로 이 문제를 상당 부분 해소하지만, 현 프로젝트는 replay·다중
-          consumer group·장기 로그 보존을 쓰지 않는데 새 Kafka/Spring Kafka 버전 도입과 운영 비용이 붙는다.
-          RabbitMQ는 <strong>메시지별 ACK, prefetch, consumer 간 작업 분배가 기본 모델</strong>이라 현재 채점
-          작업과 더 직접적으로 맞았다.
-        </p>
-
-        <h4>중복 처리 — at-least-once + 멱등</h4>
-        <p class="tl-desc">DB 저장 성공 직후 ACK 전 장애가 나면 메시지는 다시 전달된다. exactly-once를 기대하지 않고 멱등 처리로 흡수한다.</p>
-        <ul>
-          <li><code>submissionId + judgeVersion</code>에 <strong>unique constraint</strong></li>
-          <li>이미 결과가 존재하면 재저장하지 않음</li>
-          <li>같은 채점이 진행 중이면 기존 실행 결과를 기다리거나 재사용</li>
-          <li>재채점은 별도의 <code>judgeRunId</code>로 구분</li>
-        </ul>
-
-        <h4>영속성</h4>
-        <ul>
-          <li>durable quorum queue + persistent message — <strong>과반 replica 복제 후 confirm 반환</strong></li>
-          <li>publisher confirm + consumer manual ACK</li>
-          <li>3개 이상의 서로 다른 RabbitMQ 노드</li>
-        </ul>
-
-        <h4>재시도와 복구</h4>
-        <ul>
-          <li>일시적 채점 서버 오류는 <strong>지연 후 재시도</strong>, 반복 실패는 <strong>DLQ</strong>로 — 같은 queue 즉시 재투입으로 인한 retry loop 차단</li>
-          <li>대회 재채점은 별도 queue/worker capacity 사용</li>
-          <li>완료 판단은 "queue가 비었는가"가 아니라 DB의 <code>rejudge_run</code> 전체 대상 대비 완료 수로</li>
-        </ul>
-
-        <h4>트레이드오프</h4>
-        <p class="tl-desc">
-          RabbitMQ는 Kafka보다 producer batching, 압축, 대규모 backlog와 replay에 불리하고, quorum queue +
-          publisher confirm은 복제·디스크 기록 비용으로 처리량이 감소한다. 하지만 이 시스템의 병목은 브로커가 아니라
-          <strong>평균 10ms, 최대 2초의 채점 API</strong>다. 느린 채점이 다른 작업에 지연을 전파하지 않고, 실패한 작업을
-          단순하게 재분배할 수 있는지가 더 중요했다. 그 대가로 claim의 heartbeat/sweeper와 Kafka offset commit 관리가
-          사라지고, RabbitMQ cluster 운영·DLQ 관리·멱등 처리 책임이 생겼다.
-        </p>
-      </div>
-    </div>
-  </div>
-
-  <h3>결정 요약</h3>
-  <p>
-    <strong>DB-only 구조(V3)</strong>는 별도 인프라 없이 batch 성능이 좋았지만 claim, heartbeat, sweeper를 직접
-    구현해야 했고, 채점 지연 편차가 커서 stale claim timeout을 짧게 잡으면 중복 채점이 늘고 길게 잡으면 복구가
-    늦어졌다. <strong>DB outbox + Kafka(V4)</strong>는 높은 처리량과 replay가 가능했지만 완료 순서가 뒤섞인
-    offset commit을 직접 관리해야 했고, 현 시스템에서는 Kafka 로그의 장점보다 복잡성 증가가 더 컸다.
-  </p>
-  <p>
-    최종적으로 <strong>DB를 제출과 결과의 원본으로 유지</strong>하고, RabbitMQ quorum queue가 채점 작업의
-    분배와 in-flight 상태를 관리하도록 역할을 나눴다.
-  </p>
-  <div class="roles">
-    <div class="role r-db">
-      <div class="rname">MySQL</div>
-      <div class="rdesc">제출, 결과, unique constraint, 재채점 진행 상태 — 정합성의 원본</div>
-    </div>
-    <div class="role r-mq">
-      <div class="rname">RabbitMQ</div>
-      <div class="rdesc">작업 분배, backpressure, 미완료 작업 재전달</div>
-    </div>
-    <div class="role r-redis">
-      <div class="rname">Redis</div>
-      <div class="rdesc">스코어보드와 채점 결과 캐시</div>
-    </div>
-    <div class="role r-outbox">
-      <div class="rname">Outbox</div>
-      <div class="rdesc">DB 저장과 RabbitMQ 발행 사이의 유실 방지</div>
-    </div>
-  </div>
-  <div class="callout">
-    <p>DB의 정합성과 RabbitMQ의 작업 큐 모델을 결합해, 기존 claim/heartbeat/sweeper와
-    Kafka의 연속 offset commit 관리를 모두 제거했다.</p>
-  </div>
-  <hr class="sep">
 </section>
+<section class="chapter" id="ch1">
+  <p class="chapter-no">CHAPTER 1</p>
+  <h2>온라인 저지</h2>
+  <p class="chapter-meta">개인 프로젝트 · 2025.09 ~ 2026.08 · 11개월</p>
+  <p class="chapter-lede">제출 · 채점 · 순위를 돌려주는 API 서버. 다루는 범위는 <strong>대회 제출 경로</strong>다. <strong>MySQL은 원본, Redis는 파생, RabbitMQ는 전달</strong> — 저장소마다 역할을 하나씩만 준 것이 이후 두 장의 판단 기준 전부다.</p>
+<p>문제를 풀고 코드를 제출하면 채점 결과와 순위를 돌려주는 API 서버다.
+일반 제출도 있지만 이 문서가 다루는 범위는 <strong>대회 제출 경로</strong>다. 정해진 시간에 제출이 몰리고,
+유실되면 참가자가 대회 중에 알 수 없으며, 실시간 순위가 최종 순위와 달라지면 안 된다.
+Codeforces를 쓰면서 겪은 것들이 그대로 요구사항이 됐다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>분류</th>
+<th>기술</th>
+<th>무엇에 썼나</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>언어·프레임워크</td>
+<td>Java 17, Spring Boot 3.4</td>
+<td>역할별(web/batch/judge) 프로필 분리 기동</td>
+</tr>
+<tr>
+<td>저장소</td>
+<td>MySQL 8.0, Redis 7</td>
+<td>원본과 파생 상태의 분리</td>
+</tr>
+<tr>
+<td>메시징</td>
+<td>RabbitMQ 4.1</td>
+<td>quorum queue(작업 분배), stream queue(offset 복구), publisher confirm, DLQ</td>
+</tr>
+<tr>
+<td>데이터 접근</td>
+<td>Spring Data JPA, JDBC Template, Flyway</td>
+<td>임계 경로는 JDBC batch</td>
+</tr>
+<tr>
+<td>인프라</td>
+<td>Docker Compose, Nginx</td>
+<td>9개 컨테이너, CPU·메모리 상한 고정</td>
+</tr>
+<tr>
+<td>측정</td>
+<td>Gatling, Prometheus, Grafana</td>
+<td>부하 주입 13회, 큐 깊이·CPU 시계열 비교</td>
+</tr>
+</tbody>
+</table></div>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 650" width="100%" role="img" aria-label="OJ 시스템 아키텍처">
+  <style>
+    .bx    { rx: 8; stroke-width: 1.6; }
+    .app   { fill: #f1f5f9; stroke: #64748b; }
+    .sql   { fill: #eff6ff; stroke: #2563eb; }
+    .redis { fill: #fef2f2; stroke: #dc2626; }
+    .mq    { fill: #f5f3ff; stroke: #7c3aed; }
+    .edge  { fill: #f8fafc; stroke: #94a3b8; }
+    .t     { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl   { font-size: 14px; font-weight: 700; }
+    .sub   { font-size: 11.5px; fill: #475569; }
+    .tag   { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; }
+    .lg    { font-size: 11.5px; fill: #475569; }
+    .ln    { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+    .note  { font-size: 11px; fill: #0f766e; font-style: italic; }
+  </style>
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
 
-<!-- ================= 02 DEADLOCK ================= -->
-<section id="deadlock">
-  <div class="sec-head">
-    <span class="sec-num mono">02</span>
-    <h2>데드락 해결 과정</h2>
-  </div>
-  <p class="sec-sub">
-    대회 입력 → 최종화 실행, 대회 중 일반 제출 병행, 스케일 아웃을 겹쳐 돌리자 데드락이 발생했다.
-    외래키 제거와 데이터 접근 순서 정렬만으로는 해결되지 않는 케이스가 있었고, 세 단계에 걸쳐 잡았다.
-  </p>
+  <rect width="900" height="650" fill="#ffffff"/>
 
-  <h3>Case 1 — REPEATABLE READ → READ COMMITTED</h3>
-  <pre><code><span class="cm">-- claim: id 증가 방향으로 gap 락 → 레코드 락</span>
-<span class="kw">UPDATE</span> contest_submission
-<span class="kw">SET</span> judge_status = <span class="str">'PROCESSING'</span>
-<span class="kw">WHERE</span> judge_status = <span class="str">'PENDING'</span>
-<span class="kw">ORDER BY</span> id <span class="kw">LIMIT</span> 100;
+  <!-- 범례 -->
+  <g class="t">
+    <rect x="612" y="24" width="264" height="112" rx="8" fill="#ffffff" stroke="#e2e8f0"/>
+    <text x="628" y="46" class="tag" fill="#64748b">범례</text>
+    <rect x="628" y="56" width="13" height="13" rx="3" class="bx sql"/>
+    <text x="650" y="67" class="lg">MySQL — 원본 · 최종 권위</text>
+    <rect x="628" y="77" width="13" height="13" rx="3" class="bx redis"/>
+    <text x="650" y="88" class="lg">Redis — 파생 상태 (재구성 가능)</text>
+    <rect x="628" y="98" width="13" height="13" rx="3" class="bx mq"/>
+    <text x="650" y="109" class="lg">RabbitMQ — 전달 (저장소 아님)</text>
+    <rect x="628" y="119" width="13" height="13" rx="3" class="bx app"/>
+    <text x="650" y="130" class="lg">Spring 애플리케이션</text>
+  </g>
 
-<span class="cm">-- insert: 반대로 레코드 락 이전에 gap 락</span>
-<span class="kw">INSERT INTO</span> contest_submission (..., judge_status=<span class="str">'PENDING'</span>, ...) <span class="kw">VALUES</span> (...);</code></pre>
-  <div class="lockviz">
-    <div class="tx">
-      <div class="txname">TX A · claim UPDATE</div>
-      <div class="lock-chain">
-        <span class="lk held">gap lock (id↑)</span><span style="color:var(--muted)">→</span><span class="lk wait">record lock</span>
-      </div>
-    </div>
-    <div class="vs">⇄ 교차 대기</div>
-    <div class="tx">
-      <div class="txname">TX B · INSERT</div>
-      <div class="lock-chain">
-        <span class="lk held">record lock</span><span style="color:var(--muted)">→</span><span class="lk wait">gap lock</span>
-      </div>
-    </div>
-    <div class="cap">실선 = 보유한 락, 점선 = 대기 중인 락. 1씩 증가하는 키를 썼는데도 실제로는 claim 쪽이 더 큰 id의 락을 잡고 있었다.</div>
-  </div>
-  <p>
-    고려하지 못한 순서 변동과 InnoDB 내부 락 순서가 겹쳐 데드락이 났다.
-    격리 수준을 <strong>READ COMMITTED로 변경</strong>해 claim UPDATE가 gap 락을 잡지 않게 했다.
-  </p>
+  <!-- Row 1 : 요청 진입 -->
+  <rect x="30"  y="44" width="100" height="46" class="bx edge"/>
+  <text x="80"  y="73" class="t ttl" text-anchor="middle">Client</text>
 
-  <h3>Case 2 — UPDATE WHERE … → SELECT FOR UPDATE + UPDATE BY id</h3>
-  <pre><code><span class="cm">-- 오래 처리되지 못한 submission 복구</span>
-<span class="kw">UPDATE</span> contest_submission
-<span class="kw">SET</span> judge_status = <span class="str">'PENDING'</span>
-<span class="kw">WHERE</span> judge_status = <span class="str">'PROCESSING'</span> <span class="kw">AND</span> judge_claimed_at &lt; ?
-<span class="kw">ORDER BY</span> judge_claimed_at, id <span class="kw">LIMIT</span> ?;
+  <rect x="175" y="44" width="90"  height="46" class="bx edge"/>
+  <text x="220" y="73" class="t ttl" text-anchor="middle">Nginx</text>
 
-<span class="cm">-- 처리 완료 기록</span>
-<span class="kw">UPDATE</span> contest_submission
-<span class="kw">SET</span> judge_status = <span class="str">'DONE'</span>
-<span class="kw">WHERE</span> id = ? <span class="kw">AND</span> judge_status = <span class="str">'PROCESSING'</span> <span class="kw">AND</span> judge_claim_token = ?;</code></pre>
-  <p>
-    row 순서를 <code>ORDER BY</code>에 맞춰 정렬하면 해결될 것으로 봤지만, 실제로는 한쪽은
-    <strong>secondary index부터</strong>, 다른 쪽은 <strong>primary key부터</strong> 락을 타면서 데드락이 계속됐다.
-    그래서 바로 UPDATE하지 않고 두 단계로 나눴다.
-  </p>
-  <ul>
-    <li><code>SELECT … FOR UPDATE SKIP LOCKED</code>로 대상 id를 먼저 고른 뒤</li>
-    <li>양쪽 모두 <strong>id 기반 UPDATE</strong>를 수행</li>
-  </ul>
+  <rect x="310" y="44" width="130" height="46" class="bx app"/>
+  <text x="375" y="66" class="t ttl" text-anchor="middle">Web ×2</text>
+  <text x="375" y="82" class="t sub" text-anchor="middle">검증 · bulk 저장</text>
 
-  <h3>Case 3 — 인덱스 제거</h3>
-  <p>
-    그런데도 <code>SELECT FOR UPDATE SKIP LOCKED</code> 뒤의 UPDATE에서 데드락이 다시 터졌다.
-    UPDATE가 수정하는 secondary index에 락이 일시적으로 걸렸다 풀리는데, 이것이 다른 row 수정과 교차했다 —
-    한쪽은 <code>(status, claimed_at, id)</code>를 잡고 <code>(status, id)</code>를 기다리고, 다른 쪽은 반대였다.
-    현재 쿼리 패턴에서는 <code>(status, claimed_at, id)</code>만으로 충분했기에 <strong><code>(status, id)</code>
-    인덱스를 제거</strong>하고 로직을 정리해 해결했다.
-  </p>
-  <div class="callout">
-    <p><strong>교훈</strong> — MySQL InnoDB에서는 예상하기 어려운 데드락이 쉽게 발생한다.
-    락 순서를 코드 레벨에서 맞추는 것만으로는 부족하며, 인덱스 락 경로까지 확인하고
-    데드락이 나더라도 회복 가능한 구조(재시도, 멱등)를 함께 설계해야 한다.</p>
-  </div>
-  <hr class="sep">
+  <line x1="130" y1="67" x2="169" y2="67" class="ln" marker-end="url(#ah)"/>
+  <line x1="265" y1="67" x2="304" y2="67" class="ln" marker-end="url(#ah)"/>
+  <line x1="375" y1="90" x2="375" y2="118" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 2 : 제출 원본 -->
+  <rect x="266" y="124" width="218" height="66" class="bx sql"/>
+  <text x="280" y="143" class="t tag" fill="#1d4ed8">MySQL — 같은 트랜잭션</text>
+  <text x="280" y="161" class="t sub">contest_submission</text>
+  <text x="280" y="178" class="t sub">contest_judge_outbox</text>
+  <line x1="375" y1="190" x2="375" y2="222" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 3 : 채점 분배 -->
+  <rect x="290" y="228" width="170" height="46" class="bx app"/>
+  <text x="375" y="250" class="t ttl" text-anchor="middle">Batch relay</text>
+  <text x="375" y="266" class="t sub" text-anchor="middle">SKIP LOCKED · confirm</text>
+
+  <rect x="512" y="228" width="180" height="46" class="bx mq"/>
+  <text x="602" y="250" class="t ttl" text-anchor="middle">quorum queue</text>
+  <text x="602" y="266" class="t sub" text-anchor="middle">prefetch = 1</text>
+
+  <rect x="740" y="228" width="120" height="46" class="bx app"/>
+  <text x="800" y="250" class="t ttl" text-anchor="middle">Judge ×2</text>
+  <text x="800" y="266" class="t sub" text-anchor="middle">동시성 16</text>
+
+  <line x1="460" y1="251" x2="506" y2="251" class="ln" marker-end="url(#ah)"/>
+  <line x1="692" y1="251" x2="734" y2="251" class="ln" marker-end="url(#ah)"/>
+  <line x1="800" y1="274" x2="800" y2="308" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 4 : 채점 결과 -->
+  <rect x="660" y="314" width="216" height="52" class="bx sql"/>
+  <text x="674" y="333" class="t tag" fill="#1d4ed8">MySQL</text>
+  <text x="674" y="353" class="t sub">contest_submission_result</text>
+  <line x1="800" y1="366" x2="800" y2="400" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 5 : result stream -->
+  <rect x="660" y="406" width="216" height="50" class="bx mq"/>
+  <text x="674" y="425" class="t tag" fill="#6d28d9">RabbitMQ stream</text>
+  <text x="674" y="445" class="t sub">contest.judge.result.stream</text>
+
+  <!-- stream -> consumer (좌향 라우팅) -->
+  <polyline points="768,456 768,478 430,478 430,494" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 6 : 스코어보드 반영 -->
+  <rect x="340" y="500" width="180" height="50" class="bx app"/>
+  <text x="430" y="521" class="t ttl" text-anchor="middle">Batch consumer</text>
+  <text x="430" y="538" class="t sub" text-anchor="middle">offset 순서 fail-fast</text>
+
+  <rect x="90"  y="496" width="200" height="58" class="bx redis"/>
+  <text x="104" y="515" class="t tag" fill="#b91c1c">Redis — Lua 원자 갱신</text>
+  <text x="104" y="533" class="t sub">scoreboard + stream offset</text>
+  <text x="104" y="548" class="t sub">+ db-pending marker</text>
+
+  <line x1="340" y1="525" x2="296" y2="525" class="ln" marker-end="url(#ah)"/>
+  <line x1="430" y1="550" x2="430" y2="578" class="ln" marker-end="url(#ah)"/>
+
+  <!-- Row 7 : 적용 완료 기록 -->
+  <rect x="322" y="584" width="216" height="44" class="bx sql"/>
+  <text x="336" y="602" class="t tag" fill="#1d4ed8">MySQL</text>
+  <text x="336" y="620" class="t sub">scoreboard_applied_at (JDBC batch)</text>
+
+  <!-- 순서 계약 주석 -->
+  <text x="612" y="500" class="t note">완료 순서는 고정:</text>
+  <text x="612" y="518" class="t note">result commit → stream confirm → queue ACK</text>
+  <text x="612" y="546" class="t note">Redis Lua → applied_at → stream ACK</text>
+</svg></div><figcaption><strong>그림 1.</strong> 제출은 MySQL(제출 원본 + judge outbox, 같은 트랜잭션) → relay → quorum queue →
+Judge → 결과 commit → result stream → Redis Lua(스코어보드 + offset) 순으로 흐른다.
+MySQL 파랑 · Redis 빨강 · RabbitMQ 보라 · 애플리케이션 회색. 이후 모든 그림이 같은 색을 쓴다.</figcaption></figure>
+<p>저장소마다 역할을 하나씩만 준다.</p>
+<ul class="roles"><li class="role-card sql"><b>MySQL</b><span>제출 원본과 중복 여부의 최종 권위. 유일하게 유실되면 안 되는 상태다.</span></li><li class="role-card redis"><b>Redis</b><span>스코어보드 파생 상태. MySQL 결과에서 언제든 같은 값으로 재구성할 수 있어야 한다.</span></li><li class="role-card mq"><b>RabbitMQ</b><span>작업 전달 수단. 원본 저장소가 아니다.</span></li></ul>
+<p>이 세 줄이 아래 두 장의 판단 기준 전부다.</p>
+<h3 id="측정-전제">측정 전제</h3>
+<p>수치를 싣기 전에 그 수치가 설명하지 않는 것을 먼저 적는다.</p>
+<ul>
+<li><strong>단일 호스트다.</strong> Ryzen 5 5600(6코어)의 WSL 예산 12 vCPU 안에서 web·judge·MySQL·RabbitMQ·Redis가
+  상한을 나눠 쓰고, Gatling은 같은 호스트의 코어를 두고 그 VM과 경쟁한다.</li>
+<li><strong>채점이 <code>Thread.sleep</code>이다.</strong> judge 노드는 외부 채점 서버를 호출하고 기다리는 구조라 블로킹
+  시간의 대용으로는 타당하지만, 커넥션 풀 한계·타임아웃·부분 실패를 모델링하지 않는다.</li>
+<li><strong>닫힌 부하 모델이다.</strong> 가상 사용자가 직전 응답을 기다리므로 서버가 느려지면 부하가 저절로 줄고,
+  실제 장애 때의 재시도 증폭을 재현하지 못한다.</li>
+<li><strong>네트워크 지연이 0이다.</strong> 전부 loopback이다.</li>
+</ul>
+<p>따라서 아래 수치는 <em>절대 성능</em>이 아니라 <strong>구조가 어디서 막히는가</strong>의 증거로 읽어야 한다.</p>
 </section>
+<section class="chapter" id="ch2">
+  <p class="chapter-no">CHAPTER 2</p>
+  <h2>대회 제출 파이프라인</h2>
+  <p class="chapter-lede">채점 작업 분배를 <strong>DB claim에서 RabbitMQ work queue로</strong> 옮겼다. 제출 1,000/s를 150초 넣어 <strong>127,687건 전량 채점 · 유실 0</strong>을 확인하고, <code>prefetch</code>가 대시보드에 안 보이는 곳에서 꼬리를 어떻게 키우는지를 짝실험으로 갈랐다.</p>
+<p><strong>채점 작업 분배를 DB claim에서 RabbitMQ work queue로 옮겼다.</strong>
+DB claim 구조도 동작했다. 문제는 timeout·heartbeat·lease·sweeper를 직접 만들고 그 값을 정할
+근거까지 스스로 마련해야 했다는 것이다. timeout이 짧으면 정상적으로 오래 걸린 작업을 중복
+채점하고 길면 장애 복구가 늦어지는데, 그 사이를 고를 기준이 없었다.
+재전달과 in-flight 제한은 broker가 이미 검증한 기능이다.</p>
+<p>지켜야 할 조건은 네 개였다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th></th>
+<th>조건</th>
+<th>어떻게 지켰나</th>
+<th>무엇으로 확인했나</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>①</td>
+<td>HTTP 성공을 반환했다면 제출 원본은 commit되어 있다</td>
+<td>commit 이후에만 <code>202</code></td>
+<td>접수 건수 = 결과 건수</td>
+</tr>
+<tr>
+<td>②</td>
+<td><code>(contest, problem, user, codeHash)</code>가 같은 제출은 한 건만 저장</td>
+<td>MySQL unique + 삽입 후 재조회 판별</td>
+<td>중복 주입 시 ID 재사용</td>
+</tr>
+<tr>
+<td>③</td>
+<td>채점이 늦어져도 다른 제출이 같이 막히지 않는다</td>
+<td><code>prefetch=1</code> × 다수 consumer</td>
+<td><code>prefetch</code> 짝실험</td>
+</tr>
+<tr>
+<td>④</td>
+<td>프로세스·broker 장애 후 미완료 작업을 다시 처리할 수 있다</td>
+<td>unacked requeue, 결과 선조회 후 재발행</td>
+<td>judge 노드 SIGKILL</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="채점-부하-모델">채점 부하 모델</h4>
+<p>이 장의 모든 수치가 딛고 있는 두 가정이다. <strong>성능을 맞추려고 고른 값이 아니라 시나리오 정의다.</strong></p>
+<p><strong>채점 슬롯 32개</strong> — judge 노드당 리스너 16개, 두 노드. 실제 채점은 사용자 코드를 격리 환경에서
+실행하므로 동시 실행 수가 채점 서버의 코어에 묶인다. 32는 채점 서버가 동시에 32건을 받아준다는
+가정이고, 성능이 아니라 컨테이너 메모리와 그 가정이 정한 값이다. <code>Thread.sleep</code>은 CPU를 쓰지
+않으므로 슬롯을 늘리면 처리량이 공짜로 올라가지만 <strong>실제 채점에서는 일어나지 않는다.</strong>
+슬롯 수는 이 모델이 유효한 범위이기도 하다.</p>
+<p><strong>서비스 시간은 기본 50ms, 5%가 2초</strong> — 평균 147.5ms다. 설계 전제(평균 10ms, 1%가 2초)보다
+의도적으로 무겁게 잡았다. 채점이 파이프라인의 상한이 되는 형태를 만들어야, 유입과 채점의 격차를
+durable outbox가 흡수하는 과정을 관찰할 수 있기 때문이다. 가벼운 쪽으로 재면 격차가 줄어
+관찰하려던 현상 자체가 흐려진다.</p>
+<p><strong>평균만 보면 어떤 구조든 통과한다.</strong> 5%의 꼬리와 조건 ③이 구조를 갈랐다.</p>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="100%" role="img" aria-label="채점 구조의 변화: V0에서 현재까지">
+  <style>
+    .bx    { rx: 7; stroke-width: 1.5; }
+    .app   { fill: #f1f5f9; stroke: #64748b; }
+    .sql   { fill: #eff6ff; stroke: #2563eb; }
+    .mq    { fill: #f5f3ff; stroke: #7c3aed; }
+    .vol   { fill: #fffbeb; stroke: #d97706; stroke-dasharray: 4 3; }
+    .t     { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl   { font-size: 12.5px; font-weight: 700; }
+    .sub   { font-size: 10.5px; fill: #475569; }
+    .chip  { font-size: 13px; font-weight: 700; fill: #ffffff; }
+    .bad   { font-size: 11.5px; fill: #c2410c; }
+    .good  { font-size: 11.5px; fill: #0f766e; font-weight: 700; }
+    .ln    { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+    .rule  { stroke: #e2e8f0; stroke-width: 1; }
+  </style>
+  <defs>
+    <marker id="a2" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
 
-<!-- ================= 03 SCOREBOARD ================= -->
-<section id="scoreboard">
-  <div class="sec-head">
-    <span class="sec-num mono">03</span>
-    <h2>스코어보드 회복</h2>
-  </div>
-  <p class="sec-sub">
-    스코어보드는 대회 중 빠른 제공을 위해 Redis 위에 올렸다(데이터 구조가 DB에 부적합).
-    문제는 Redis 유실 시의 복구다 — snapshot 복구를 전제하면, outbox id는 중간에 빈 숫자가 있을 수 있고
-    도착 순서도 id와 다를 수 있어 <strong>어떤 outbox가 도착하지 않았는지 사전에 알 수 없다.</strong>
-    go-back-N 같은 복구가 불가능한 상황.
-  </p>
+  <rect width="900" height="580" fill="#ffffff"/>
 
-  <div class="duo">
-    <div class="opt-card picked">
-      <h4>Redis seq <span class="badge ac">ACCEPTED</span></h4>
-      <p>Redis가 1씩 증가하는 seq를 발급·저장한다. 이미 본 제출이면 기존 seq를 반환, 처음이면 새로 발급.
-         이 seq를 outbox에도 기록한다.</p>
-      <p>Redis가 과거 snapshot으로 복구되면 <strong>같은 seq가 재발급</strong>되고, outbox에서 seq 중복으로
-         이를 감지할 수 있다. 주기적으로 중복을 검사해 재시도하면 자동 복구된다.</p>
-      <span class="lbl good">PROS</span>
-      <ul><li>Redis에 상태를 묻는 과정 없이 outbox 갱신만으로 회복</li></ul>
-      <span class="lbl bad">CONS</span>
-      <ul><li>복구가 새 submission 제출(트래픽)에 직접적으로 의존</li></ul>
-    </div>
-    <div class="opt-card">
-      <h4>Gapless seq <span class="badge rt">REJECTED</span></h4>
-      <p>빈틈없는 seq를 생성하면 어떤 outbox가 누락됐는지 알 수 있고, Redis가 처리한 seq 목록을
-         유지하면 복구 가능. Kafka 같은 append log 기반 저장소면 파티션 내 gapless 발급이 쉽다.</p>
-      <span class="lbl good">PROS</span>
-      <ul><li>복구에 트래픽이 필요 없음</li></ul>
-      <span class="lbl bad">CONS</span>
-      <ul>
-        <li>이것만을 위해 Kafka를 도입하기 어려움</li>
-        <li>DB에서 gapless 유지는 seq 발급 구간의 직렬화 필요</li>
-        <li>복구를 여러 서버에서 돌리기 어려움</li>
-      </ul>
-    </div>
-  </div>
-  <p>
-    DB만 사용하는 현 구성에서 gapless seq의 직렬화 비용이 우려되어 <strong>Redis seq를 선택</strong>했다.
-    대회 종료 시점에는 한 번 더 대사(reconciliation)를 돌려 최종 정합성을 확보한다.
-  </p>
-  <hr class="sep">
+  <!-- ================= V0 ================= -->
+  <rect x="24" y="52" width="72" height="28" rx="6" fill="#94a3b8"/>
+  <text x="60" y="71" class="t chip" text-anchor="middle">V0</text>
+
+  <rect x="116" y="40" width="150" height="46" class="bx sql"/>
+  <text x="191" y="61" class="t ttl" text-anchor="middle">HTTP 저장</text>
+  <text x="191" y="77" class="t sub" text-anchor="middle">commit</text>
+
+  <rect x="298" y="40" width="160" height="46" class="bx vol"/>
+  <text x="378" y="61" class="t ttl" text-anchor="middle">Spring event</text>
+  <text x="378" y="77" class="t sub" text-anchor="middle">JVM 메모리</text>
+
+  <rect x="490" y="40" width="160" height="46" class="bx app"/>
+  <text x="570" y="68" class="t ttl" text-anchor="middle">async listener</text>
+
+  <rect x="682" y="40" width="150" height="46" class="bx app"/>
+  <text x="757" y="68" class="t ttl" text-anchor="middle">채점 API (건별)</text>
+
+  <line x1="266" y1="63" x2="292" y2="63" class="ln" marker-end="url(#a2)"/>
+  <line x1="458" y1="63" x2="484" y2="63" class="ln" marker-end="url(#a2)"/>
+  <line x1="650" y1="63" x2="676" y2="63" class="ln" marker-end="url(#a2)"/>
+
+  <text x="116" y="108" class="t bad">✕ commit 후 listener 실행 전에 죽으면 그 제출은 영원히 채점되지 않는다 — 복구 지점이 없음</text>
+  <line x1="24" y1="126" x2="876" y2="126" class="rule"/>
+
+  <!-- ================= V2 ================= -->
+  <rect x="24" y="176" width="72" height="28" rx="6" fill="#94a3b8"/>
+  <text x="60" y="195" class="t chip" text-anchor="middle">V2</text>
+
+  <rect x="116" y="164" width="180" height="46" class="bx sql"/>
+  <text x="206" y="185" class="t ttl" text-anchor="middle">SKIP LOCKED claim</text>
+  <text x="206" y="201" class="t sub" text-anchor="middle">여러 건 선점</text>
+
+  <rect x="336" y="152" width="330" height="70" rx="9" fill="#fff7ed" stroke="#ea580c" stroke-width="1.6"/>
+  <text x="350" y="171" class="t ttl" fill="#9a3412">하나의 긴 트랜잭션</text>
+  <text x="350" y="190" class="t sub">병렬 채점 · 결과 batch 저장 · 커넥션 점유</text>
+  <text x="350" y="208" class="t sub">99건 × 10ms + 1건 × 2초 → 전체 2초</text>
+
+  <rect x="706" y="164" width="150" height="46" class="bx sql"/>
+  <text x="781" y="192" class="t ttl" text-anchor="middle">결과 commit</text>
+
+  <line x1="296" y1="187" x2="330" y2="187" class="ln" marker-end="url(#a2)"/>
+  <line x1="666" y1="187" x2="700" y2="187" class="ln" marker-end="url(#a2)"/>
+
+  <text x="116" y="244" class="t bad">✕ 외부 API를 트랜잭션 안에서 호출 — 느린 한 건이 나머지 결과 commit까지 막는다 (head-of-line blocking)</text>
+  <line x1="24" y1="262" x2="876" y2="262" class="rule"/>
+
+  <!-- ================= V3 ================= -->
+  <rect x="24" y="312" width="72" height="28" rx="6" fill="#94a3b8"/>
+  <text x="60" y="331" class="t chip" text-anchor="middle">V3</text>
+
+  <rect x="116" y="300" width="160" height="46" class="bx sql"/>
+  <text x="196" y="321" class="t ttl" text-anchor="middle">짧은 claim</text>
+  <text x="196" y="337" class="t sub" text-anchor="middle">token · claimed_at</text>
+
+  <rect x="308" y="300" width="180" height="46" class="bx vol"/>
+  <text x="398" y="321" class="t ttl" text-anchor="middle">메모리 큐 + worker</text>
+  <text x="398" y="337" class="t sub" text-anchor="middle">채점 (트랜잭션 밖)</text>
+
+  <rect x="520" y="300" width="160" height="46" class="bx sql"/>
+  <text x="600" y="328" class="t ttl" text-anchor="middle">결과 batch 저장</text>
+
+  <rect x="712" y="300" width="144" height="46" class="bx app"/>
+  <text x="784" y="321" class="t ttl" text-anchor="middle">sweeper</text>
+  <text x="784" y="337" class="t sub" text-anchor="middle">오래된 claim 회수</text>
+
+  <line x1="276" y1="323" x2="302" y2="323" class="ln" marker-end="url(#a2)"/>
+  <line x1="488" y1="323" x2="514" y2="323" class="ln" marker-end="url(#a2)"/>
+  <path d="M784,300 L784,286 L196,286 L196,296" class="ln" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+
+  <text x="116" y="380" class="t bad">✕ 격리는 해결됐지만 claim timeout · heartbeat · lease · in-flight를 직접 구현하고 관찰해야 함 — 정할 근거가 없었다</text>
+  <line x1="24" y1="398" x2="876" y2="398" class="rule"/>
+
+  <!-- ================= 현재 ================= -->
+  <rect x="24" y="448" width="72" height="28" rx="6" fill="#0f766e"/>
+  <text x="60" y="467" class="t chip" text-anchor="middle">현재</text>
+
+  <rect x="116" y="436" width="160" height="46" class="bx sql"/>
+  <text x="196" y="457" class="t ttl" text-anchor="middle">judge outbox</text>
+  <text x="196" y="473" class="t sub" text-anchor="middle">제출과 같은 트랜잭션</text>
+
+  <rect x="308" y="436" width="170" height="46" class="bx mq"/>
+  <text x="393" y="457" class="t ttl" text-anchor="middle">quorum queue</text>
+  <text x="393" y="473" class="t sub" text-anchor="middle">prefetch = 1</text>
+
+  <rect x="510" y="436" width="150" height="46" class="bx app"/>
+  <text x="585" y="457" class="t ttl" text-anchor="middle">Judge ×2</text>
+  <text x="585" y="473" class="t sub" text-anchor="middle">동시성 16</text>
+
+  <rect x="692" y="436" width="164" height="46" class="bx sql"/>
+  <text x="774" y="457" class="t ttl" text-anchor="middle">결과 commit</text>
+  <text x="774" y="473" class="t sub" text-anchor="middle">→ confirm → ACK</text>
+
+  <line x1="276" y1="459" x2="302" y2="459" class="ln" marker-end="url(#a2)"/>
+  <line x1="478" y1="459" x2="504" y2="459" class="ln" marker-end="url(#a2)"/>
+  <line x1="660" y1="459" x2="686" y2="459" class="ln" marker-end="url(#a2)"/>
+
+  <text x="116" y="516" class="t good">✓ 재전달 · in-flight 제한 · retry · DLQ를 broker가 담당 — 직접 만든 claim 관리 코드가 사라짐</text>
+  <text x="116" y="538" class="t bad">△ 남는 비용: outbox → Rabbit은 at-least-once. 중복은 submission ID 멱등 처리로 흡수한다</text>
+</svg></div><figcaption><strong>그림 2.</strong> V0은 이벤트가 JVM 메모리에만 있어 commit 후 listener 전에 죽으면 영원히 채점되지
+않는다. V2는 99건이 50ms에 끝나도 1건이 2초면 트랜잭션 전체가 2초다(head-of-line blocking).
+V3은 격리는 됐지만 timeout·lease 값을 정할 근거가 없다. 현재 구조는 재전달·in-flight 제한·
+retry·DLQ를 broker가 담당한다. <strong>DB가 작업 상태를 쥐던 구조에서 broker가 쥐는 구조로 넘어간다.</strong></figcaption></figure>
+<h3 id="무엇을-얻고-무엇을-지불했나">무엇을 얻고 무엇을 지불했나</h3>
+<p><strong>얻은 것.</strong> claim 상태 관리 코드가 통째로 사라졌다. <code>prefetch</code>로 consumer별 in-flight를
+제한하고, retry 3회를 소진한 메시지는 DLQ로 보낸다.</p>
+<p><strong>Kafka가 아닌 이유.</strong> 작업 분배에 필요한 건 순서가 아니라 격리였다. Kafka는 파티션이 순서 보장
+단위이면서 동시에 병렬 단위라 둘을 따로 조절하기 어렵다. <code>prefetch</code>는 1로 되돌릴 수 있다는 점이
+컸다.</p>
+<p><strong>지불한 것.</strong> DB와 broker 사이에 2PC가 없으므로 at-least-once다. relay는 confirm을 받으면
+outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으므로, outbox가 있다고 broker durability를
+낮출 수도 없다 — quorum queue와 persistent message를 그대로 유지해야 한다.
+대신 제출 원본과 <code>contest_judge_outbox</code>를 같은 트랜잭션에 commit해서
+<strong>중복 여부의 권위만은 broker가 아니라 DB에</strong> 남겼다. 중복 전달은 채점 결과 PK와 <code>INSERT IGNORE</code>,
+그리고 결과가 이미 있으면 채점 API를 호출하지 않고 넘어가는 재전달 경로로 흡수한다.</p>
+<h3 id="최대-처리량은-하나가-아니다">"최대 처리량"은 하나가 아니다</h3>
+<p>제출은 세 단계를 지나고, 각 단계가 앞 단계보다 느려서 경계마다 큐가 하나씩 생긴다.
+단일 숫자로 최대 처리량을 말하면 어느 쪽이든 오해가 된다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>단계</th>
+<th>하는 일</th>
+<th style="text-align: right;">상한</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>유입</td>
+<td>HTTP 접수 → 중복 해시 → bulk INSERT commit</td>
+<td style="text-align: right;"><strong>1,014 /s</strong></td>
+</tr>
+<tr>
+<td>relay</td>
+<td>judge outbox claim → RabbitMQ 발행</td>
+<td style="text-align: right;"><strong>640 /s</strong></td>
+</tr>
+<tr>
+<td>채점</td>
+<td>슬롯 32개 → 결과 commit → ACK</td>
+<td style="text-align: right;"><strong>150 /s</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p>유입이 채점의 <strong>6.8배</strong>다. 이 격차를 durable outbox가 흡수하는 것이 설계 의도였고 실제로 그랬다.
+접수는 commit 이후에만 <code>202</code>를 반환하므로 "접수했다고 답한 뒤 잃는" 경로는 없다.
+쓰기 경로는 오히려 부하에서 효율이 올라간다 — 밀리기 시작하면 배치가 뭉쳐 건당 비용이 떨어진다.
+저부하 수치로 선형 외삽하면 이 자기조절을 놓친다.</p>
+<p>병목이 채점인 것은 맞지만 <strong>CPU 때문은 아니다.</strong> 처음에는 judge CPU가 72–78%로 관측돼 CPU 한도가
+처리량을 깎는다고 판단했다. 컨테이너를 recreate한 런과 웜 상태 런의 CPU 시계열을 비교하니 100초에
+걸쳐 7%로 감쇠하는 JIT 컴파일 곡선이었고, 샘플러의 "피크 CPU"가 그 초반 스파이크를 집고 있었다.
+웜 상태 정상 CPU는 7–9%다. 슬롯이 대기에 묶여 있어서 CPU가 남는 것이지, 더 받을 수 있다는 뜻이 아니다.</p>
+<h3 id="prefetch-여유가-있을-때-꼬리가-증폭된다"><code>prefetch</code>: 여유가 있을 때 꼬리가 증폭된다</h3>
+<p><code>prefetch</code>를 1 / 4 / 64로 바꿔 짝실험했다. 도착률·서비스 분포·consumer 수는 전부 고정하고
+디스패치 정책만 바꿨다. 부하는 HTTP 139/s이고, 중복 제출을 걷어내면 채점단에 도착하는 것은 123/s다.
+세 런 모두 <code>ready</code>가 최대 109건을 넘지 않았다 — <strong>포화가 아닌 상태에서 잰 값이라는 뜻이고,
+이 조건이 아래 결론의 전제다.</strong></p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align: right;">prefetch</th>
+<th style="text-align: right;">p50</th>
+<th style="text-align: right;">p95</th>
+<th style="text-align: right;">p99</th>
+<th style="text-align: right;">max</th>
+<th style="text-align: right;">consumer당 대기</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.322s</td>
+<td style="text-align: right;">2.119s</td>
+<td style="text-align: right;"><strong>2.376s</strong></td>
+<td style="text-align: right;">2.844s</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.312s</td>
+<td style="text-align: right;">2.258s</td>
+<td style="text-align: right;"><strong>3.975s</strong></td>
+<td style="text-align: right;">6.101s</td>
+<td style="text-align: right;">1.18</td>
+</tr>
+<tr>
+<td style="text-align: right;">64</td>
+<td style="text-align: right;">1.297s</td>
+<td style="text-align: right;">6.433s</td>
+<td style="text-align: right;"><strong>10.308s</strong></td>
+<td style="text-align: right;">16.706s</td>
+<td style="text-align: right;">6.37</td>
+</tr>
+</tbody>
+</table></div>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">prefetch 별 consumer 로컬 버퍼 (unacked)</text>
+<text x="74" y="38" class="sub">도착·서비스 분포·consumer 수 고정, 디스패치 정책만 변경 · 상한은 32 / 128 / 2,048</text>
+<text x="16" y="38" class="ax">unacked (건)</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">125</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">250</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">375</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">500</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">44s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">88s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">132s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">176s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">219s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L91.9,276.3 L110.6,288.6 L130.6,287.6 L147.1,278.2 L165.7,276.3 L186.9,276.3 L204.1,278.7 L218.8,276.3 L235.9,276.3 L252.8,276.3 L267.6,276.3 L284.1,276.3 L302.1,276.3 L316.7,276.3 L333.6,276.3 L350.1,288.6 L364.5,276.3 L383.4,276.3 L400.2,276.3 L416.8,276.3 L432.9,283.6 L449.4,287.1 L467.4,279.2 L481.6,283.6 L500.1,276.3 L516.6,279.2 L533.1,276.3 L549.8,276.3 L566.1,276.3 L583.9,276.3 L601.5,292.0" fill="none" stroke="#0f766e" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L91.1,276.3 L108.7,282.2 L123.3,279.7 L139.8,263.0 L156.7,258.5 L171.8,252.6 L190.9,265.9 L207.9,273.8 L224.6,261.0 L239.7,268.4 L256.3,248.7 L274.5,251.2 L291.1,259.0 L307.7,260.0 L324.0,269.9 L339.7,249.7 L356.1,264.4 L372.4,251.2 L390.6,247.2 L407.0,265.4 L423.3,260.5 L439.8,257.1 L456.0,264.0 L474.5,254.6 L490.8,236.9 L507.3,246.7 L523.7,275.8 L539.9,269.4 L558.0,259.0 L574.7,257.1 L591.1,261.5 L607.7,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L89.2,292.0 L106.0,135.1 L123.0,166.0 L138.3,208.4 L155.6,199.5 L172.4,190.6 L188.8,218.7 L205.8,199.5 L223.8,182.3 L239.9,189.7 L256.9,171.5 L273.8,131.6 L288.4,147.8 L304.9,156.2 L321.9,139.5 L339.7,164.6 L356.4,167.0 L373.1,177.9 L389.4,205.4 L405.5,171.0 L424.5,176.4 L440.9,166.5 L456.5,211.3 L473.1,150.3 L489.5,193.1 L508.8,210.3 L525.4,207.9 L542.0,202.0 L556.4,213.8 L572.9,202.9 L591.4,261.5 L608.0,292.0" fill="none" stroke="#ea580c" stroke-width="2" stroke-linejoin="round"/>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#0f766e" stroke-width="2.5"/>
+<text x="652" y="56" class="t">prefetch=1</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="76" class="t">prefetch=4</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#ea580c" stroke-width="2.5"/>
+<text x="652" y="96" class="t">prefetch=64</text>
+</svg></div><figcaption>prefetch 별 consumer 로컬 버퍼. 상한은 16배 차이인데 실제로 찬 양은 326건 — 상한이 아니라 얼마나 찼는지가 꼬리를 정한다. 20260808-092647 / -094634 / -093145.</figcaption></figure>
+<p>대기 0에서의 2.376초는 서비스 시간 꼬리 그 자체다. <code>prefetch</code>가 키우는 것은 그 위에 얹히는 대기다.
+<strong><code>prefetch=4</code>에서 이미 p99가 67% 나빠지는데 p50과 p95는 그대로다.</strong> 대시보드에서 흔히 보는 두
+지표가 멀쩡하니 공짜처럼 보이는 것이 가장 위험한 지점이다.</p>
+<p>broker는 "이 consumer에게 밀어넣을 자리가 있나"를 보고 배정한다. 스레드가 한가한지를 보는 것이
+아니다. <code>prefetch=1</code>일 때만 이 둘이 같은 말이 된다. 그보다 크면 배정에 가용성 정보가 실리지 않고,
+한번 로컬 버퍼에 들어간 메시지는 <strong>옆 consumer가 놀고 있어도 회수되지 않는다.</strong> 일감을 놀리지
+않던 큐 하나가, head-of-line blocking을 가진 32개의 독립 FIFO로 쪼개진다. <code>prefetch</code>를 4에서 64로
+16배 올려도 p99가 2.6배만 나빠지는 이유도 여기 있다 — <code>unacked</code> 피크가 상한 2,048의 <strong>16%</strong>(326건)에
+그쳤다. <strong>상한이 아니라 실제로 얼마나 찼는지가 손해를 정한다.</strong></p>
+<blockquote>
+<p><strong>측정 조건이 결론을 바꿨다.</strong> 같은 변경을 포화 상태(도착 &gt; 용량)에서 재면 p99 악화가 +25%로
+보인다. 포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 동시에 키워 효과를 희석하기
+때문이다. 순서를 뒤집어 재현했을 때 p99가 <code>2.372 → 2.376s</code>, <code>10.458 → 10.308s</code>로 일치해
+워밍업 교란도 배제했다.</p>
+</blockquote>
+<h3 id="백로그는-병목-바로-앞에만-앉는다">백로그는 병목 바로 앞에만 앉는다</h3>
+<p>제출 1,000/s를 150초 넣었다. HTTP 133,935건 중 132,510건을 접수했고(거절 1,425건, <strong>1.06%</strong>),
+중복을 걷어낸 <strong>127,687건이 전부 채점됐다</strong> — 제출 행과 결과 행이 일치한다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>버퍼</th>
+<th>위치</th>
+<th style="text-align: center;">영속</th>
+<th style="text-align: right;">피크</th>
+<th>거동</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>제출 in-flight</td>
+<td>web JVM</td>
+<td style="text-align: center;">✕</td>
+<td style="text-align: right;">410 / 800</td>
+<td>여유</td>
+</tr>
+<tr>
+<td>judge outbox</td>
+<td>MySQL</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: right;">37,842</td>
+<td>부하 종료 87초 만에 해소</td>
+</tr>
+<tr>
+<td><strong>RabbitMQ ready</strong></td>
+<td>브로커</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: right;"><strong>94,211</strong></td>
+<td>이후 9분에 걸쳐 배수</td>
+</tr>
+<tr>
+<td>scoreboard 반영 대기</td>
+<td>MySQL</td>
+<td style="text-align: center;">✓</td>
+<td style="text-align: right;">67</td>
+<td>병목 하류라 굶음</td>
+</tr>
+</tbody>
+</table></div>
+<p>각 값은 그 버퍼의 개별 피크이고 같은 시점의 값이 아니다. judge outbox는 유입(1,014)과
+relay(640)의 차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는다. RabbitMQ는 relay(640)와
+채점(150)의 격차가 4배라 나머지 9분을 여기서 쓴다. 총 배수 <strong>10.4분, 유실 0</strong>.</p>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">단계별 적체와 배수 — 제출 1,000/s를 150초</text>
+<text x="74" y="38" class="sub">var/loadtest-20260808-104446/pipeline.csv · 접수 132,510건 · 중복 제외 127,687건 채점 · 유실 0</text>
+<text x="16" y="38" class="ax">건</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">25,000</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">50,000</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">75,000</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">100,000</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">155s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">310s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">465s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">620s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">775s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L78.8,291.8 L83.2,290.2 L89.2,281.0 L94.6,267.4 L100.2,253.9 L107.5,248.5 L113.1,236.0 L118.3,223.6 L125.0,218.3 L130.6,207.5 L136.2,195.2 L142.3,190.1 L147.6,177.0 L152.8,170.9 L158.1,159.4 L164.3,150.4 L169.7,144.6 L175.0,133.7 L180.2,128.1 L186.1,114.6 L191.2,108.8 L196.2,95.8 L200.7,91.3 L205.6,78.5 L212.6,66.8 L218.0,60.2 L222.6,60.8 L227.4,63.1 L232.6,65.1 L237.4,69.6 L241.5,71.7 L246.0,73.8 L250.7,77.9 L255.4,80.0 L261.5,84.6 L266.0,86.6 L270.6,88.6 L274.5,93.1 L279.7,95.3 L285.3,99.2 L289.7,101.1 L294.7,105.1 L299.7,106.8 L304.2,108.8 L309.8,112.9 L314.9,115.0 L319.4,117.2 L323.5,121.2 L328.1,123.2 L334.2,127.4 L339.1,129.4 L344.1,133.6 L348.7,135.6 L353.2,137.7 L357.4,142.2 L362.7,144.4 L368.2,148.3 L372.5,150.4 L377.3,154.8 L382.5,156.7 L387.0,159.0 L392.0,162.9 L397.4,165.0 L401.9,167.2 L406.3,171.3 L411.0,173.6 L416.6,178.3 L420.9,180.4 L425.4,182.2 L430.1,186.4 L434.5,188.5 L440.7,192.6 L445.3,194.5 L449.8,196.6 L453.8,201.2 L459.1,203.3 L464.4,205.7 L468.3,209.9 L473.5,212.1 L478.6,216.4 L482.7,218.5 L487.3,220.8 L491.8,225.0 L497.3,227.3 L502.1,231.3 L506.6,233.4 L511.3,235.3 L515.9,239.5 L520.6,241.6 L525.8,245.6 L531.5,247.7 L535.9,249.7 L540.5,253.8 L545.2,256.1 L550.1,260.2 L555.0,262.3 L559.7,264.4 L564.9,268.9 L569.9,270.9 L574.5,275.2 L579.3,277.2 L584.2,279.1 L588.8,283.2 L593.3,285.1 L598.1,289.3 L603.5,291.7 L608.0,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L78.8,291.9 L83.2,291.8 L89.2,290.6 L94.6,288.4 L100.2,288.6 L107.5,286.1 L113.1,281.5 L118.3,279.4 L125.0,268.6 L130.6,261.2 L136.2,252.7 L142.3,244.3 L147.6,239.4 L152.8,231.6 L158.1,224.3 L164.3,213.2 L169.7,205.6 L175.0,198.9 L180.2,202.3 L186.1,215.8 L191.2,226.9 L196.2,239.2 L200.7,250.3 L205.6,262.6 L212.6,277.3 L218.0,290.8 L222.6,292.0 L227.4,292.0 L232.6,292.0 L237.4,292.0 L241.5,292.0 L246.0,292.0 L250.7,292.0 L255.4,292.0 L261.5,292.0 L266.0,292.0 L270.6,292.0 L274.5,292.0 L279.7,292.0 L285.3,292.0 L289.7,292.0 L294.7,292.0 L299.7,292.0 L304.2,292.0 L309.8,292.0 L314.9,292.0 L319.4,292.0 L323.5,292.0 L328.1,292.0 L334.2,292.0 L339.1,292.0 L344.1,292.0 L348.7,292.0 L353.2,292.0 L357.4,292.0 L362.7,292.0 L368.2,292.0 L372.5,292.0 L377.3,292.0 L382.5,292.0 L387.0,292.0 L392.0,292.0 L397.4,292.0 L401.9,292.0 L406.3,292.0 L411.0,292.0 L416.6,292.0 L420.9,292.0 L425.4,292.0 L430.1,292.0 L434.5,292.0 L440.7,292.0 L445.3,292.0 L449.8,292.0 L453.8,292.0 L459.1,292.0 L464.4,292.0 L468.3,292.0 L473.5,292.0 L478.6,292.0 L482.7,292.0 L487.3,292.0 L491.8,292.0 L497.3,292.0 L502.1,292.0 L506.6,292.0 L511.3,292.0 L515.9,292.0 L520.6,292.0 L525.8,292.0 L531.5,292.0 L535.9,292.0 L540.5,292.0 L545.2,292.0 L550.1,292.0 L555.0,292.0 L559.7,292.0 L564.9,292.0 L569.9,292.0 L574.5,292.0 L579.3,292.0 L584.2,292.0 L588.8,292.0 L593.3,292.0 L598.1,292.0 L603.5,292.0 L608.0,292.0" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L78.8,291.9 L83.2,292.0 L89.2,292.0 L94.6,292.0 L100.2,292.0 L107.5,291.9 L113.1,291.9 L118.3,291.9 L125.0,291.9 L130.6,291.9 L136.2,291.9 L142.3,291.9 L147.6,291.9 L152.8,291.9 L158.1,292.0 L164.3,291.9 L169.7,291.9 L175.0,291.9 L180.2,292.0 L186.1,291.9 L191.2,291.8 L196.2,292.0 L200.7,291.9 L205.6,291.9 L212.6,291.9 L218.0,292.0 L222.6,291.9 L227.4,291.9 L232.6,292.0 L237.4,292.0 L241.5,291.9 L246.0,292.0 L250.7,291.9 L255.4,291.9 L261.5,291.9 L266.0,291.9 L270.6,291.9 L274.5,291.9 L279.7,292.0 L285.3,291.9 L289.7,291.9 L294.7,291.9 L299.7,291.9 L304.2,291.9 L309.8,291.9 L314.9,291.9 L319.4,292.0 L323.5,292.0 L328.1,291.9 L334.2,292.0 L339.1,291.9 L344.1,291.9 L348.7,292.0 L353.2,291.9 L357.4,292.0 L362.7,292.0 L368.2,291.9 L372.5,292.0 L377.3,292.0 L382.5,291.9 L387.0,292.0 L392.0,292.0 L397.4,292.0 L401.9,292.0 L406.3,291.9 L411.0,291.9 L416.6,291.9 L420.9,291.9 L425.4,291.9 L430.1,291.9 L434.5,292.0 L440.7,291.9 L445.3,291.9 L449.8,292.0 L453.8,291.9 L459.1,291.9 L464.4,292.0 L468.3,291.9 L473.5,291.9 L478.6,292.0 L482.7,292.0 L487.3,292.0 L491.8,292.0 L497.3,291.9 L502.1,291.9 L506.6,291.9 L511.3,291.9 L515.9,291.9 L520.6,291.9 L525.8,291.9 L531.5,291.9 L535.9,292.0 L540.5,292.0 L545.2,291.9 L550.1,291.9 L555.0,292.0 L559.7,291.9 L564.9,292.0 L569.9,292.0 L574.5,292.0 L579.3,292.0 L584.2,291.9 L588.8,291.9 L593.3,292.0 L598.1,292.0 L603.5,292.0 L608.0,292.0" fill="none" stroke="#dc2626" stroke-width="2" stroke-dasharray="5 3" stroke-linejoin="round"/>
+<line x1="177.3" y1="46" x2="177.3" y2="292" stroke="#ea580c" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="182.3" y="60" class="mk" fill="#ea580c">부하 종료</text>
+<circle cx="218.0" cy="60.2" r="4" fill="#7c3aed"/>
+<text x="226.0" y="51.2" class="mk" fill="#7c3aed" text-anchor="start">피크 94,211</text>
+<circle cx="175.0" cy="198.9" r="4" fill="#2563eb"/>
+<text x="183.0" y="189.9" class="mk" fill="#2563eb" text-anchor="start">37,842</text>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="56" class="t">RabbitMQ ready</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#2563eb" stroke-width="2.5"/>
+<text x="652" y="76" class="t">judge outbox (MySQL)</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5 3"/>
+<text x="652" y="96" class="t">scoreboard 반영 대기</text>
+</svg></div><figcaption>단계별 적체와 배수. 부하는 150초에 끝나는데 RabbitMQ ready 는 209초까지 계속 올라 94,211이 된다 — 백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다. 20260808-104446/pipeline.csv.</figcaption></figure>
+<p>하류 큐가 얕은 것은 건강 신호가 아니다. scoreboard 반영 대기는 모든 런에서 50–70을 유지했는데,
+채점이 끝나야 행이 생기므로 상류가 막히면 유입 자체가 제한되기 때문이다. 조건이 나쁜 런에서
+오히려 더 얕아졌다. <strong>얕은 큐 = 정상이 아니라, 얕은 큐 = 상류 확인 필요.</strong></p>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 490" width="100%" role="img" aria-label="과부하가 쌓이는 위치와 영속성 경계">
+  <style>
+    .bx    { rx: 7; stroke-width: 1.5; }
+    .vol   { fill: #fff7ed; stroke: #ea580c; stroke-dasharray: 5 3; }
+    .dur   { fill: #eff6ff; stroke: #2563eb; }
+    .mq    { fill: #f5f3ff; stroke: #7c3aed; }
+    .dlq   { fill: #fef2f2; stroke: #b91c1c; }
+    .t     { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl   { font-size: 12px; font-weight: 700; }
+    .sub   { font-size: 10.5px; fill: #475569; }
+    .cap   { font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+    .ln    { stroke: #94a3b8; stroke-width: 1.6; fill: none; }
+  </style>
+  <defs>
+    <marker id="a6" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="a6r" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#b91c1c"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="490" fill="#ffffff"/>
+
+  <!-- 영역 배경 -->
+  <rect x="0" y="44"  width="900" height="178" fill="#fffbf5"/>
+  <rect x="0" y="222" width="900" height="230" fill="#f7fafd"/>
+
+  <!-- 비영속 영역 -->
+  <text x="24" y="34" class="t cap" fill="#c2410c">비영속 — 프로세스가 죽으면 유실된다</text>
+  <text x="24" y="74" class="t sub" fill="#9a3412">유실을 없애는 대신, 유실 가능 범위의 상한을 설정값으로 고정했다.</text>
+
+  <rect x="40" y="92" width="190" height="66" class="bx vol"/>
+  <text x="135" y="114" class="t ttl" text-anchor="middle">bulk writer 큐</text>
+  <text x="135" y="132" class="t sub" text-anchor="middle">+ admission semaphore</text>
+  <text x="135" y="149" class="t sub" text-anchor="middle" fill="#c2410c">초과 시 HTTP 503 + Retry-After</text>
+
+  <rect x="266" y="92" width="190" height="66" class="bx vol"/>
+  <text x="361" y="114" class="t ttl" text-anchor="middle">completion executor</text>
+  <text x="361" y="132" class="t sub" text-anchor="middle">4 threads · queue 64</text>
+  <text x="361" y="149" class="t sub" text-anchor="middle" fill="#c2410c">가득 차면 CallerRuns가 역압</text>
+
+  <line x1="230" y1="125" x2="260" y2="125" class="ln" marker-end="url(#a6)"/>
+
+  <!-- 경계선 -->
+  <line x1="24" y1="222" x2="876" y2="222" stroke="#0f172a" stroke-width="2" stroke-dasharray="9 5"/>
+  <rect x="596" y="208" width="204" height="28" rx="14" fill="#0f172a"/>
+  <text x="698" y="227" class="t cap" fill="#ffffff" text-anchor="middle">영속성 경계 — DB commit</text>
+
+  <!-- 경계를 넘는 화살표 -->
+  <path d="M361,158 L361,238 L150,238 L150,248" class="ln" stroke="#0f766e" stroke-width="2" marker-end="url(#a6)"/>
+  <text x="374" y="196" class="t ttl" fill="#0f766e">commit</text>
+
+  <!-- 영속 단계 : 왼쪽에서 오른쪽으로 -->
+  <rect x="60" y="250" width="180" height="66" class="bx dur"/>
+  <text x="150" y="272" class="t ttl" text-anchor="middle">judge outbox</text>
+  <text x="150" y="290" class="t sub" text-anchor="middle">MySQL PENDING rows</text>
+  <text x="150" y="307" class="t sub" text-anchor="middle">DB 용량까지 축적</text>
+
+  <rect x="290" y="250" width="180" height="66" class="bx mq"/>
+  <text x="380" y="272" class="t ttl" text-anchor="middle">quorum queue</text>
+  <text x="380" y="290" class="t sub" text-anchor="middle">ready messages</text>
+  <text x="380" y="307" class="t sub" text-anchor="middle">unacked 최대 32</text>
+
+  <rect x="520" y="250" width="180" height="66" class="bx mq"/>
+  <text x="610" y="272" class="t ttl" text-anchor="middle">stream pending</text>
+  <text x="610" y="290" class="t sub" text-anchor="middle">tail offset − 적용 offset</text>
+  <text x="610" y="307" class="t sub" text-anchor="middle">retention 범위까지</text>
+
+  <line x1="240" y1="283" x2="284" y2="283" class="ln" marker-end="url(#a6)"/>
+  <line x1="470" y1="283" x2="514" y2="283" class="ln" marker-end="url(#a6)"/>
+
+  <!-- 실패 분기 -->
+  <path d="M380,316 L380,346" fill="none" stroke="#b91c1c" stroke-width="1.5"
+        stroke-dasharray="5 3" marker-end="url(#a6r)"/>
+  <text x="394" y="338" class="t sub" fill="#b91c1c">retry 3회 소진</text>
+
+  <rect x="290" y="352" width="180" height="62" class="bx dlq"/>
+  <text x="380" y="374" class="t ttl" text-anchor="middle" fill="#991b1b">dead-letter queue</text>
+  <text x="380" y="392" class="t sub" text-anchor="middle">운영자가 재처리·폐기할</text>
+  <text x="380" y="408" class="t sub" text-anchor="middle">때까지 계속 증가</text>
+
+  <text x="24" y="440" class="t cap" fill="#1d4ed8">영속 — 재시작하면 이어서 처리된다</text>
+
+  <!-- 검증 메모 -->
+  <text x="24" y="474" class="t sub">검증: <tspan font-weight="700">max-in-flight=800</tspan> 기준선에서 정확히 상한에서 멈췄고, 거부된 제출 수와 HTTP 503 수가 일치했다.</text>
+</svg></div><figcaption><strong>그림 3.</strong> 제출이 지나는 모든 버퍼와 그 영속성. 경계는 DB commit이고, 위(주황 점선)는
+프로세스가 죽으면 유실되는 구간이다. <strong>유실을 없애는 대신 유실 가능 범위의 상한을 설정값으로
+고정했다.</strong></figcaption></figure>
+<p>경계의 의미는 하나다. <strong>제출 완료 응답을 받은 사용자는 이미 경계 안에 있다.</strong>
+유실 가능 구간은 응답을 아직 받지 못한 요청뿐이고, 그 범위는 admission semaphore가 상한으로 묶는다 —
+web 노드당 동시 처리 800건을 넘으면 503과 <code>Retry-After</code>로 거절한다.
+<strong>유실 가능 범위의 크기가 곧 이 설정값이다.</strong></p>
+<h4 id="노드-하나가-죽으면">노드 하나가 죽으면</h4>
+<p>백로그가 없는 조건(도착 100/s, 용량의 67%)에서 judge 노드 하나를 SIGKILL했다.
+백로그를 걷어내야 재전달 자체의 속도가 보인다. 무주입 런과 짝지었다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>제출 100/s</th>
+<th style="text-align: right;">무주입</th>
+<th style="text-align: right;">judge-1 SIGKILL</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>p95</td>
+<td style="text-align: right;">0.556s</td>
+<td style="text-align: right;">6.864s</td>
+</tr>
+<tr>
+<td><strong>max</strong></td>
+<td style="text-align: right;">2.553s</td>
+<td style="text-align: right;"><strong>9.770s</strong></td>
+</tr>
+<tr>
+<td>submissions = results</td>
+<td style="text-align: right;">19,452 ✓</td>
+<td style="text-align: right;">19,493 ✓</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>판정 근거는 max 하나다.</strong> 노드는 60.3초 동안 죽어 있었다. RabbitMQ가 하트비트 타임아웃(기본
+60초)을 기다렸다면 그 노드가 물고 있던 메시지의 end-to-end가 60초를 넘었어야 한다. max가 9.77초다.</p>
+<pre><code> 96s  ready=  0  unacked=17  consumers=32   ← SIGKILL 직전
+100s  ready= 52  unacked=16  consumers=16   ← 4초 만에 회수 완료
+157s  ready=567  unacked=32  consumers=32   ← 다시 소비 시작
+</code></pre>
+<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
+<rect width="840" height="340" fill="#ffffff"/>
+<text x="74" y="22" class="ttl">judge 노드 하나를 SIGKILL — 회수와 복구</text>
+<rect x="236.0" y="46" width="129.1" height="246" fill="#ea580c" opacity="0.07"/>
+<text x="74" y="38" class="sub">var/loadtest-20260808-115115(주입) vs -114654(무주입) · 도착 100/s · prefetch=1이라 unacked 수 = 살아 있는 consumer 수</text>
+<text x="16" y="38" class="ax">건</text>
+<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
+<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
+<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
+<text x="66" y="234.5" class="ax" text-anchor="end">250</text>
+<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
+<text x="66" y="173.0" class="ax" text-anchor="end">500</text>
+<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
+<text x="66" y="111.5" class="ax" text-anchor="end">750</text>
+<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
+<text x="66" y="50.0" class="ax" text-anchor="end">1,000</text>
+<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
+<text x="180.8" y="310" class="ax" text-anchor="middle">44s</text>
+<text x="287.6" y="310" class="ax" text-anchor="middle">88s</text>
+<text x="394.4" y="310" class="ax" text-anchor="middle">131s</text>
+<text x="501.2" y="310" class="ax" text-anchor="middle">175s</text>
+<text x="608.0" y="310" class="ax" text-anchor="middle">219s</text>
+<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
+<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
+<path d="M74.0,292.0 L91.4,276.6 L109.8,245.9 L126.3,69.1 L146.2,161.3 L162.3,261.2 L178.7,215.1 L195.0,192.1 L213.5,145.9 L236.0,169.0 L253.3,169.0 L269.8,169.0 L286.5,169.0 L305.8,169.0 L325.3,169.0 L346.0,169.0 L365.1,46.0 L385.0,46.0 L407.9,46.0 L426.7,222.8 L443.2,46.0 L458.5,130.6 L476.6,253.6 L497.3,145.9 L514.1,53.7 L532.4,46.0 L550.5,222.8 L568.8,192.1 L587.6,292.0 L608.0,292.0" fill="none" stroke="#64748b" stroke-width="1.8" stroke-dasharray="6 3" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L90.5,292.0 L108.6,292.0 L128.6,292.0 L149.3,292.0 L164.6,291.8 L181.5,292.0 L198.4,292.0 L214.7,292.0 L231.5,292.0 L249.1,292.0 L270.0,292.0 L287.4,292.0 L305.0,292.0 L322.3,292.0 L337.9,292.0 L356.9,289.5 L373.1,292.0 L393.0,292.0 L410.7,292.0 L428.5,292.0 L446.3,292.0 L462.7,290.8 L482.6,292.0 L499.2,292.0 L516.8,292.0 L534.1,292.0 L552.1,292.0 L572.1,292.0 L588.3,292.0 L607.6,292.0" fill="none" stroke="#0f766e" stroke-width="1.6" stroke-dasharray="3 3" stroke-linejoin="round"/>
+<path d="M74.0,292.0 L91.4,292.0 L109.8,292.0 L126.3,292.0 L146.2,292.0 L162.3,292.0 L178.7,292.0 L195.0,292.0 L213.5,292.0 L236.0,279.2 L253.3,261.7 L269.8,250.7 L286.5,225.8 L305.8,182.0 L325.3,177.4 L346.0,130.9 L365.1,152.5 L385.0,232.2 L407.9,291.8 L426.7,292.0 L443.2,290.3 L458.5,292.0 L476.6,292.0 L497.3,292.0 L514.1,292.0 L532.4,291.5 L550.5,292.0 L568.8,292.0 L587.6,292.0 L608.0,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
+<line x1="236.0" y1="46" x2="236.0" y2="292" stroke="#ea580c" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="241.0" y="60" class="mk" fill="#ea580c">SIGKILL · unacked 32→16</text>
+<line x1="365.1" y1="46" x2="365.1" y2="292" stroke="#0f766e" stroke-width="1.4" stroke-dasharray="4 3"/>
+<text x="370.1" y="78" class="mk" fill="#0f766e">53초 뒤 32 복귀</text>
+<circle cx="346.0" cy="130.9" r="4" fill="#7c3aed"/>
+<text x="354.0" y="121.9" class="mk" fill="#7c3aed" text-anchor="start">피크 655</text>
+<line x1="622" y1="52" x2="646" y2="52" stroke="#64748b" stroke-width="2.5" stroke-dasharray="6 3"/>
+<text x="652" y="56" class="t">unacked (0–32 스케일)</text>
+<line x1="622" y1="72" x2="646" y2="72" stroke="#0f766e" stroke-width="2.5" stroke-dasharray="3 3"/>
+<text x="652" y="76" class="t">ready — 무주입 짝</text>
+<line x1="622" y1="92" x2="646" y2="92" stroke="#7c3aed" stroke-width="2.5"/>
+<text x="652" y="96" class="t">ready — SIGKILL</text>
+</svg></div><figcaption>노드 사망과 회수. prefetch=1 이라 unacked 수가 곧 일하는 consumer 수이고, 32 → 16 → 32 가 노드의 생사를 그대로 보여준다. 주황 음영이 죽어 있던 구간. 20260808-115115(주입) vs -114654(무주입 짝).</figcaption></figure>
+<p>꼬리가 나빠진 것은 재전달 지연 때문이 아니다. 죽어 있는 동안 슬롯이 16개로 줄어 처리율이
+절반(약 75/s)이 되고 <code>ready</code>가 655까지 쌓인다. 그 대기는 <code>655 ÷ 150 = 4.4초</code>(회복된 용량)와
+<code>655 ÷ 75 = 8.7초</code>(반토막 용량) 사이에 있고, 실측 max 9.77초에서 채점 꼬리 2초를 빼면 7.8초다 —
+<strong>구간의 대부분을 반토막 용량이 지배했다는 뜻이고, 그래서 산수가 닫힌다.</strong>
+악화분은 전부 "능력이 없던 시간"이지 재전달 비용이 아니다. 복구 영향을 줄이려면 broker가 아니라
+JVM 기동 시간이나 노드 수를 손대야 한다.</p>
+<h3 id="insert-ignore-뒤에-숨는-누락"><code>INSERT IGNORE</code> 뒤에 숨는 누락</h3>
+<p>여기까지가 구간별 거동이고, 마지막으로 유입 1,014/s를 지탱하는 저장 경로 안쪽을 본다.
+그 처리량은 chunk 단위 bulk INSERT에서 나오는데, chunk 안에서 한 건이 실패하면 문제가 생긴다.</p>
+<p>중복 한 건이 chunk 전체를 rollback시키는 것을 막으려고 제출 저장을 <code>INSERT IGNORE</code>로 바꿨다.
+그런데 이것은 unique 충돌만 무시하지 않는다. FK 위반처럼 행 전체가 경고와 함께 조용히 사라지는
+경우도 삼킨다. 게다가 Connector/J가 batch를 multi-values로 rewrite하면 update count가
+<code>SUCCESS_NO_INFO(-2)</code>로 와서, <strong>어떤 행이 삽입되고 어떤 행이 무시됐는지 드라이버가 알려주지 않는다.</strong>
+그래서 INSERT 직후 같은 트랜잭션에서 예약 ID와 dedup key를 다시 조회해 분류한다.</p>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" width="100%" role="img" aria-label="INSERT IGNORE 사후 판별과 불량 요청 격리">
+  <style>
+    .bx   { rx: 7; stroke-width: 1.5; }
+    .app  { fill: #f1f5f9; stroke: #64748b; }
+    .sql  { fill: #eff6ff; stroke: #2563eb; }
+    .warn { fill: #fff7ed; stroke: #ea580c; }
+    .ok   { fill: #f0fdfa; stroke: #0f766e; }
+    .t    { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .mono { font-family: Consolas,'Courier New',monospace; font-size: 11.5px; fill: #1e3a8a; }
+    .ttl  { font-size: 12.5px; font-weight: 700; }
+    .sub  { font-size: 10.5px; fill: #475569; }
+    .cap  { font-size: 11px; font-weight: 700; fill: #64748b; letter-spacing: .05em; }
+    .chip { font-size: 11.5px; font-weight: 700; fill: #ffffff; }
+    .bad  { font-size: 11px; fill: #c2410c; }
+    .ln   { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+  </style>
+  <defs>
+    <marker id="a3" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="640" fill="#ffffff"/>
+
+  <!-- 1단계 : batch insert -->
+  <text x="30" y="28" class="t cap">① 저장 시도</text>
+
+  <rect x="30" y="40" width="150" height="48" class="bx app"/>
+  <text x="105" y="61" class="t ttl" text-anchor="middle">chunk 최대 100건</text>
+  <text x="105" y="77" class="t sub" text-anchor="middle">JVM 내 중복 병합 후</text>
+
+  <rect x="216" y="40" width="342" height="48" class="bx sql"/>
+  <text x="230" y="60" class="mono">INSERT IGNORE INTO contest_submission</text>
+  <text x="230" y="78" class="mono">VALUES (…), (…), (…);</text>
+
+  <rect x="594" y="40" width="276" height="48" class="bx warn"/>
+  <text x="608" y="60" class="t ttl" fill="#9a3412">update count = −2</text>
+  <text x="608" y="78" class="t sub">SUCCESS_NO_INFO — 판별 불가</text>
+
+  <line x1="180" y1="64" x2="210" y2="64" class="ln" marker-end="url(#a3)"/>
+  <line x1="558" y1="64" x2="588" y2="64" class="ln" marker-end="url(#a3)"/>
+
+  <text x="30" y="112" class="t bad">✕ INSERT IGNORE는 unique 충돌뿐 아니라 FK 위반 같은 오류도 조용히 무시한다 — 무엇이 무시됐는지 드라이버가 알려주지 않는다</text>
+
+  <!-- 2단계 : 사후 조회 -->
+  <text x="30" y="152" class="t cap">② 같은 트랜잭션에서 사후 조회</text>
+
+  <rect x="216" y="164" width="342" height="42" class="bx sql"/>
+  <text x="387" y="190" class="t ttl" text-anchor="middle">예약 ID · dedup key 재조회</text>
+  <line x1="387" y1="206" x2="387" y2="228" class="ln" marker-end="url(#a3)"/>
+
+  <!-- 3단계 : 4분기 -->
+  <text x="30" y="252" class="t cap">③ 결과 분류</text>
+
+  <!-- row 1 -->
+  <rect x="30" y="264" width="330" height="40" class="bx ok"/>
+  <text x="44" y="289" class="t sub">예약 ID에 요청과 같은 key의 row 존재</text>
+  <rect x="392" y="266" width="118" height="36" rx="6" fill="#0f766e"/>
+  <text x="451" y="289" class="t chip" text-anchor="middle">새 삽입</text>
+  <text x="536" y="289" class="t sub">예약 ID 반환 · judge outbox 생성</text>
+  <line x1="360" y1="284" x2="386" y2="284" class="ln" marker-end="url(#a3)"/>
+
+  <!-- row 2 -->
+  <rect x="30" y="314" width="330" height="40" class="bx sql"/>
+  <text x="44" y="339" class="t sub">예약 ID 없음 + 같은 dedup key row 존재</text>
+  <rect x="392" y="316" width="118" height="36" rx="6" fill="#2563eb"/>
+  <text x="451" y="339" class="t chip" text-anchor="middle">정상 중복</text>
+  <text x="536" y="339" class="t sub">기존 submission ID 반환 · outbox 없음</text>
+  <line x1="360" y1="334" x2="386" y2="334" class="ln" marker-end="url(#a3)"/>
+
+  <!-- row 3 -->
+  <rect x="30" y="364" width="330" height="40" class="bx warn"/>
+  <text x="44" y="389" class="t sub">예약 ID · dedup key 둘 다 없음 (FK 위반 등)</text>
+  <rect x="392" y="366" width="118" height="36" rx="6" fill="#ea580c"/>
+  <text x="451" y="389" class="t chip" text-anchor="middle">설명 불가 누락</text>
+  <text x="536" y="389" class="t sub">정합성 예외 → 트랜잭션 rollback</text>
+  <line x1="360" y1="384" x2="386" y2="384" class="ln" marker-end="url(#a3)"/>
+
+  <!-- row 4 -->
+  <rect x="30" y="414" width="330" height="40" class="bx warn"/>
+  <text x="44" y="439" class="t sub">예약 ID가 다른 key의 row를 가리킴</text>
+  <rect x="392" y="416" width="118" height="36" rx="6" fill="#b91c1c"/>
+  <text x="451" y="439" class="t chip" text-anchor="middle">ID 충돌</text>
+  <text x="536" y="439" class="t sub">fail-fast → 트랜잭션 rollback</text>
+  <line x1="360" y1="434" x2="386" y2="434" class="ln" marker-end="url(#a3)"/>
+
+  <!-- 4단계 : 불량 격리 -->
+  <polyline points="451,454 451,478 362,478 362,496" class="ln" marker-end="url(#a3)"/>
+  <polyline points="451,454 451,478 660,478 660,496" class="ln" marker-end="url(#a3)"/>
+
+  <text x="30" y="492" class="t cap">④ rollback된 chunk를 두 집합으로 나눠 재처리</text>
+
+  <rect x="72" y="502" width="336" height="70" class="bx warn"/>
+  <text x="240" y="524" class="t ttl" text-anchor="middle" fill="#9a3412">offenders</text>
+  <text x="240" y="542" class="t sub" text-anchor="middle">예외가 지목한 요청 + 같은 dedup key 공유</text>
+  <text x="240" y="560" class="t sub" text-anchor="middle">→ 이 Future만 실패시킨다</text>
+
+  <rect x="492" y="502" width="336" height="70" class="bx ok"/>
+  <text x="660" y="524" class="t ttl" text-anchor="middle" fill="#115e59">survivors</text>
+  <text x="660" y="542" class="t sub" text-anchor="middle">함께 rollback됐을 뿐 정상인 요청</text>
+  <text x="660" y="560" class="t sub" text-anchor="middle">→ 동일 예약 ID로 한 번만 재실행</text>
+
+  <text x="72" y="600" class="t sub">첫 시도가 rollback으로 완전히 취소됐고 요청별 예약 ID가 고정되어 있으므로 재실행이 안전하다.</text>
+  <text x="72" y="620" class="t ttl" fill="#0f766e">재실행에서는 다시 격리하지 않는다 → chunk당 DB 시도 횟수 최대 2회</text>
+</svg></div><figcaption>INSERT IGNORE 판별</figcaption></figure>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>조회 결과</th>
+<th>판정</th>
+<th>처리</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>예약 ID에 같은 key의 행 존재</td>
+<td>새 삽입</td>
+<td>예약 ID 반환, judge outbox 생성</td>
+</tr>
+<tr>
+<td>예약 ID 없음 + 같은 dedup key 행 존재</td>
+<td>정상 중복</td>
+<td>기존 submission ID 반환</td>
+</tr>
+<tr>
+<td>둘 다 없음</td>
+<td>설명 불가 누락</td>
+<td>정합성 예외 → rollback</td>
+</tr>
+<tr>
+<td>예약 ID가 다른 key의 행을 가리킴</td>
+<td>ID 충돌</td>
+<td>fail-fast → rollback</td>
+</tr>
+</tbody>
+</table></div>
+<p>여기서 끝내면 불량 한 건이 여전히 정상 99건을 죽인다. 정합성 예외에 문제가 된 예약 ID를 담고
+chunk를 둘로 나눠, <strong>offenders</strong>의 Future만 실패시키고 <strong>survivors</strong>는 이미 예약해 둔 같은 ID로
+다시 insert한다. 첫 시도가 rollback으로 완전히 취소됐고 ID가 고정되어 있으므로 재실행이 안전하고,
+chunk당 DB 시도는 최대 2회다.</p>
+<p>이 판별 덕분에 MySQL이 중복의 유일한 권위가 됐고, 앞단에 두던 Redis 중복 캐시를 임계 경로에서
+지울 수 있었다.</p>
 </section>
+<section class="chapter" id="ch3">
+  <p class="chapter-no">CHAPTER 3</p>
+  <h2>스코어보드 전달·복구 경로</h2>
+  <p class="chapter-lede">스코어보드 전달을 <strong>DB outbox에서 RabbitMQ stream으로</strong> 옮겼다. 이유는 처리 성능이 아니라 <strong>checkpoint의 위치</strong>다 — Redis를 스냅샷으로 되돌렸을 때 되감긴 offset + 1이 곧 재시작점이 된다.</p>
+<p><strong>스코어보드 전달을 DB outbox에서 RabbitMQ stream으로 옮겼다. 이유는 처리 성능이 아니라
+checkpoint의 위치다.</strong> Redis 상태와 재시작 지점이 같은 스냅샷 경계 안에 있어야 복구가 단순해진다.</p>
+<p>Redis 스코어보드는 파생 상태다. 그래서 "Redis가 죽으면 어떡하나"는
+<strong>"어디서부터 다시 흘려보낼 것인가"</strong> 한 줄로 좁혀진다. 그 재시작 지점을 어디 둘지가 문제였다.</p>
+<p>가장 단순한 발상인 <code>max(outbox.id)</code>는 쓸 수 없다. auto increment ID에는 gap이 있고, DB insert
+순서와 Redis 적용 순서가 같지 않으며, 실패한 작은 ID가 재시도되는 동안 큰 ID가 먼저 적용될 수
+있다. 하나만 저장해서는 중간 누락을 판단할 수 없다. 문제를 다시 쓰면 <strong>단조 증가 키를 누가
+소유하는가</strong>다.</p>
+<pre><code>기존   Redis INCR(redis_seq)  →  DB outbox에 checkpoint
+현재   RabbitMQ가 offset 발급  →  Redis Lua 안에 checkpoint
+</code></pre>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="100%" role="img" aria-label="스코어보드 전달 경로 비교: DB outbox 방식과 RabbitMQ stream 방식">
+  <style>
+    .bx    { rx: 7; stroke-width: 1.5; }
+    .app   { fill: #f1f5f9; stroke: #64748b; }
+    .sql   { fill: #eff6ff; stroke: #2563eb; }
+    .redis { fill: #fef2f2; stroke: #dc2626; }
+    .mq    { fill: #f5f3ff; stroke: #7c3aed; }
+    .t     { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl   { font-size: 12.5px; font-weight: 700; }
+    .sub   { font-size: 10.5px; fill: #475569; }
+    .chip  { font-size: 13px; font-weight: 700; fill: #ffffff; }
+    .ln    { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+    .key   { font-size: 12px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a4" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="a4r" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#dc2626"/>
+    </marker>
+  </defs>
 
-<!-- ================= 04 RANKING ================= -->
-<section id="ranking">
-  <div class="sec-head">
-    <span class="sec-num mono">04</span>
-    <h2>랭킹 조회 개선</h2>
-  </div>
-  <p class="sec-sub">
-    사용자는 랭킹 페이지에서 자기 위치를 확인하고, 자신이 포함된 페이지로 바로 이동할 수 있어야 한다.
-    <code>ORDER BY … LIMIT :offset, :limit</code>은 정렬 인덱스를 타더라도 깊은 페이지에서 앞의 row를
-    전부 읽고 버려야 한다.
-  </p>
+  <rect width="900" height="580" fill="#ffffff"/>
 
-  <div class="duo">
-    <div class="opt-card">
-      <h4>solved — bucket 집계 <span class="badge ac">계산형</span></h4>
-      <p><code>solved_count_bucket</code> 테이블에 [푼 문제 수 n, 해당 count의 유저 수, 그보다 큰 유저 수]를 유지한다.</p>
-      <ul>
-        <li>내 solved count → bucket에서 상위 유저 수 조회</li>
-        <li>같은 count 내 내 순번 계산 → 합산해 rank 산출</li>
-        <li>rank가 속한 page start 계산 → 해당 구간만 읽기</li>
-      </ul>
-      <p><code>solved_count</code>가 <strong>1씩 증가만</strong> 하기 때문에 가능한 구조 —
-      전체 재정렬 없이 작은 bucket 테이블만으로 rank를 계산한다.
-      단, 성능이 유저 수만이 아니라 <strong>값의 분포</strong>에 좌우된다.</p>
-    </div>
-    <div class="opt-card">
-      <h4>current streak — snapshot <span class="badge ac">사전계산형</span></h4>
-      <p>자정 배치가 전날 활동으로 streak를 갱신한 뒤, 0이 아닌 유저만 모아
-      <code>user_streak_rank_snapshot</code>을 만든다. rank가 이미 저장되어 있다.</p>
-      <ul>
-        <li>snapshot에서 내 row와 <code>snapshot_rank</code>를 바로 읽기</li>
-        <li><code>snapshot_rank BETWEEN start AND end</code>로 페이지 조회</li>
-      </ul>
-      <p>조회 시점에 rank를 <strong>계산하는 것이 아니라 읽기만</strong> 하는 구조.
-      streak는 매일 바뀌므로 일 단위 snapshot과 자연스럽게 맞는다.</p>
-    </div>
-  </div>
+  <!-- 배경 컬럼 -->
+  <rect x="24" y="24" width="404" height="470" rx="12" fill="#fdfdfe" stroke="#e2e8f0"/>
+  <rect x="472" y="24" width="404" height="470" rx="12" fill="#fbfefd" stroke="#99f6e4"/>
 
-  <h3>벤치마크</h3>
-  <p>각 랭크 타입에서 앞/중간/뒤 3개 지점의 한 페이지씩 조회했다.
-     current streak는 100K행 snapshot, solved는 8M+행 테이블 기준.</p>
+  <!-- 헤더 -->
+  <rect x="44" y="44" width="150" height="30" rx="6" fill="#94a3b8"/>
+  <text x="119" y="64" class="t chip" text-anchor="middle">기존 — DB outbox</text>
+  <rect x="492" y="44" width="176" height="30" rx="6" fill="#0f766e"/>
+  <text x="580" y="64" class="t chip" text-anchor="middle">채택 — RabbitMQ stream</text>
 
-  <div class="bench">
-    <div class="bench-title">깊은 페이지 조회 레이턴시</div>
-    <div class="bench-sub">가로축 로그 스케일 · 값은 ms · 막대에 hover하면 강조</div>
-    <div class="legend">
-      <span class="li"><span class="sw naive"></span>naive (OFFSET)</span>
-      <span class="li"><span class="sw opt"></span>optimized</span>
-    </div>
+  <!-- ===== 좌: outbox ===== -->
+  <rect x="44" y="94" width="364" height="42" class="bx app"/>
+  <text x="226" y="120" class="t ttl" text-anchor="middle">Judge — 채점 결과 commit</text>
+  <line x1="226" y1="136" x2="226" y2="158" class="ln" marker-end="url(#a4)"/>
 
-    <div class="bench-group">
-      <div class="bg-name">current streak <small>— snapshot 방식 · 위치 101 / 49,601 / 99,301</small></div>
-      <div class="brow">
-        <div class="pos">Front</div>
-        <div class="bars">
-          <div class="barline" title="naive 161 ms"><div class="bar naive" style="width:49.3%"></div><span class="bval">161 ms</span></div>
-          <div class="barline" title="optimized 0.586 ms"><div class="bar opt" style="width:11.8%"></div><span class="bval">0.586 ms</span><span class="speed">275× 빠름</span></div>
-        </div>
-      </div>
-      <div class="brow">
-        <div class="pos">Middle</div>
-        <div class="bars">
-          <div class="barline" title="naive 8,890 ms"><div class="bar naive" style="width:76.1%"></div><span class="bval">8,890 ms</span></div>
-          <div class="barline" title="optimized 0.443 ms"><div class="bar opt" style="width:9.9%"></div><span class="bval">0.443 ms</span><span class="speed">20,068× 빠름</span></div>
-        </div>
-      </div>
-      <div class="brow">
-        <div class="pos">Back</div>
-        <div class="bars">
-          <div class="barline" title="naive 14,382 ms"><div class="bar naive" style="width:79.4%"></div><span class="bval">14,382 ms</span></div>
-          <div class="barline" title="optimized 0.113 ms"><div class="bar opt" style="width:2%"></div><span class="bval">0.113 ms</span><span class="speed">127,274× 빠름</span></div>
-        </div>
-      </div>
-    </div>
+  <rect x="44" y="164" width="364" height="46" class="bx sql"/>
+  <text x="226" y="184" class="t ttl" text-anchor="middle">MySQL: contest_submission_outbox</text>
+  <text x="226" y="201" class="t sub" text-anchor="middle">PENDING → PROCESSING → COMPLETED(redis_seq)</text>
+  <line x1="226" y1="210" x2="226" y2="232" class="ln" marker-end="url(#a4)"/>
 
-    <div class="bench-group">
-      <div class="bg-name">solved <small>— bucket 방식 · 위치 101 / 4,000,501 / 8,000,901</small></div>
-      <div class="brow">
-        <div class="pos">Front</div>
-        <div class="bars">
-          <div class="barline" title="naive 19.1 ms"><div class="bar naive" style="width:35.1%"></div><span class="bval">19.1 ms</span></div>
-          <div class="barline" title="optimized 24.2 ms"><div class="bar opt" style="width:36.7%"></div><span class="bval">24.2 ms</span><span class="speed neg">0.8× (동급)</span></div>
-        </div>
-      </div>
-      <div class="brow">
-        <div class="pos">Middle</div>
-        <div class="bars">
-          <div class="barline" title="naive 217,842 ms"><div class="bar naive" style="width:97.5%"></div><span class="bval">217,842 ms</span></div>
-          <div class="barline" title="optimized 369 ms"><div class="bar opt" style="width:54.9%"></div><span class="bval">369 ms</span><span class="speed">590× 빠름</span></div>
-        </div>
-      </div>
-      <div class="brow">
-        <div class="pos">Back</div>
-        <div class="bars">
-          <div class="barline" title="naive 233,231 ms"><div class="bar naive" style="width:98%"></div><span class="bval">233,231 ms</span></div>
-          <div class="barline" title="optimized 47,747 ms"><div class="bar opt" style="width:87.4%"></div><span class="bval">47,747 ms</span><span class="speed">4.9× 빠름</span></div>
-        </div>
-      </div>
-    </div>
-    <div class="bench-axis mono">log scale — 0.1ms ─ 10ms ─ 1s ─ 100s</div>
-  </div>
+  <rect x="44" y="238" width="364" height="46" class="bx app"/>
+  <text x="226" y="258" class="t ttl" text-anchor="middle">Batch worker</text>
+  <text x="226" y="275" class="t sub" text-anchor="middle">200ms 주기 claim · Redis pipeline 전송</text>
+  <line x1="226" y1="284" x2="226" y2="306" class="ln" marker-end="url(#a4)"/>
 
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Rank type</th><th>Front</th><th>Middle</th><th>Back</th></tr>
-      </thead>
-      <tbody>
-        <tr><td>current streak · naive</td><td><span class="mono">161 ms</span></td><td><span class="mono">8,890 ms</span></td><td><span class="mono">14,382 ms</span></td></tr>
-        <tr><td>current streak · optimized</td><td><span class="mono">0.586 ms</span></td><td><span class="mono">0.443 ms</span></td><td><span class="mono">0.113 ms</span></td></tr>
-        <tr><td>solved · naive</td><td><span class="mono">19.1 ms</span></td><td><span class="mono">217,842 ms</span></td><td><span class="mono">233,231 ms</span></td></tr>
-        <tr><td>solved · optimized</td><td><span class="mono">24.2 ms</span></td><td><span class="mono">369 ms</span></td><td><span class="mono">47,747 ms</span></td></tr>
-      </tbody>
-    </table>
-  </div>
-  <p>
-    bucket 방식의 성능은 값의 분포에 좌우된다 — 8M 유저에서 back 지점은 같은 solved count 구간이 넓어
-    47초까지 늘어나지만, <strong>10만 유저 데이터셋에서는 같은 deep page fetch가 약 0.46ms</strong>로
-    충분히 실용적이었다. 규모와 분포에 따라 snapshot 방식과의 선택이 갈린다.
-  </p>
+  <rect x="44" y="312" width="364" height="50" class="bx redis"/>
+  <text x="226" y="332" class="t ttl" text-anchor="middle">Redis Lua</text>
+  <text x="226" y="350" class="t sub" text-anchor="middle">INCR redis_seq + scoreboard 갱신</text>
+
+  <!-- 되돌아가는 화살표: seq를 DB에 기록 -->
+  <path d="M408,337 L432,337 L432,187 L412,187" fill="none" stroke="#dc2626" stroke-width="1.5"
+        stroke-dasharray="5 3" marker-end="url(#a4r)"/>
+  <text x="426" y="231" class="t sub" fill="#b91c1c" text-anchor="end">redis_seq를 DB outbox에 다시 기록</text>
+
+  <!-- checkpoint 결론 -->
+  <rect x="44" y="382" width="364" height="92" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.6"/>
+  <text x="60" y="404" class="t key" fill="#991b1b">checkpoint = DB의 redis_seq</text>
+  <text x="60" y="424" class="t sub">Redis는 RDB 스냅샷으로 롤백되지만</text>
+  <text x="60" y="441" class="t sub">DB checkpoint는 롤백되지 않는다.</text>
+  <text x="60" y="463" class="t sub" fill="#b91c1c">→ lost-tail 스캔 · duplicate seq 그룹 · pagination 필요</text>
+
+  <!-- ===== 우: stream ===== -->
+  <rect x="492" y="94" width="364" height="42" class="bx app"/>
+  <text x="674" y="120" class="t ttl" text-anchor="middle">Judge — 결과 commit 후 stream publish</text>
+  <line x1="674" y1="136" x2="674" y2="158" class="ln" marker-end="url(#a4)"/>
+
+  <rect x="492" y="164" width="364" height="46" class="bx mq"/>
+  <text x="674" y="184" class="t ttl" text-anchor="middle">RabbitMQ stream</text>
+  <text x="674" y="201" class="t sub" text-anchor="middle">broker가 offset 발급 · publisher confirm</text>
+  <line x1="674" y1="210" x2="674" y2="232" class="ln" marker-end="url(#a4)"/>
+
+  <rect x="492" y="238" width="364" height="46" class="bx app"/>
+  <text x="674" y="258" class="t ttl" text-anchor="middle">Batch stream consumer</text>
+  <text x="674" y="275" class="t sub" text-anchor="middle">prefetch 500 · offset 순서 fail-fast</text>
+  <line x1="674" y1="284" x2="674" y2="306" class="ln" marker-end="url(#a4)"/>
+
+  <rect x="492" y="312" width="364" height="50" class="bx redis"/>
+  <text x="674" y="331" class="t ttl" text-anchor="middle">Redis Lua — 한 번에 원자적으로</text>
+  <text x="674" y="350" class="t sub" text-anchor="middle">scoreboard + stream offset + db-pending</text>
+
+  <rect x="492" y="382" width="364" height="92" rx="8" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.6"/>
+  <text x="508" y="404" class="t key" fill="#115e59">checkpoint = Redis 안의 offset</text>
+  <text x="508" y="424" class="t sub">상태와 checkpoint가 같은 스냅샷 경계를</text>
+  <text x="508" y="441" class="t sub">공유하므로 롤백될 때 함께 되감긴다.</text>
+  <text x="508" y="463" class="t sub" fill="#0f766e">→ 되감긴 offset + 1 이 곧 재시작점</text>
+
+  <!-- 하단 요약 -->
+  <text x="24" y="528" class="t key" fill="#334155">핵심은 성능이 아니라 단조 증가 키의 소유권을 누가 갖느냐다.</text>
+  <text x="24" y="552" class="t sub">Redis INCR → DB에 checkpoint  ⟹  RabbitMQ offset → Redis 안에 checkpoint</text>
+</svg></div><figcaption><strong>그림 4.</strong> 왼쪽은 checkpoint가 DB에 있어 Redis만 되감기면 어긋남을 탐지해야 한다. 오른쪽은
+checkpoint가 Redis Lua 안에 있어 되감긴 offset + 1이 곧 재시작점이다.
+<strong>왼쪽에만 되돌아오는 점선이 있다는 비대칭이 이 그림의 전부다.</strong></figcaption></figure>
+<p>어느 쪽을 고르든 얻는 것은 같다. RDB 스냅샷으로 복구했을 때 그 시점 이후 구간만 다시 흘려보내면
+되고, 스코어보드 전체를 MySQL에서 재구성할 필요가 없다. 전체 rebuild는 retention 밖으로 밀려났을
+때만 쓰는 마지막 수단이다. <strong>차이는 그 증분의 시작점을 얼마나 쉽게 찾느냐다.</strong></p>
+<h3 id="무엇을-지불했나">무엇을 지불했나</h3>
+<p>judge는 결과를 commit한 뒤 stream publish confirm까지 기다린 다음에야 work queue를 ACK한다.
+<strong>DB와 broker에 두 번 쓰는 비용</strong>이고, 그 사이 장애는 중복 전달로 나타난다.</p>
+<pre><code>contest_submission_result commit → result stream publisher confirm → judge work queue ACK
+</code></pre>
+<p>이 순서를 바꾸면 안 된다. publish를 commit 앞에 두거나 confirm을 기다리지 않고 listener를 반환하면
+"DB commit 후 publish 전 장애"를 재전달로 복구할 수 없다. 재전달됐을 때는 결과 행부터 조회하고,
+이미 있으면 <strong>채점 API를 호출하지 않고 저장된 결과만 다시 발행</strong>한다. unacked delivery를 가진
+consumer connection을 강제로 끊어 확인했다 — 결과 행은 그대로였고 stream entry만 하나 늘었으며
+채점 호출은 0회였다. 스코어보드 적용이 순서·중복에 무관하므로 그 중복 entry가 결과를 바꾸지는 않는다.
+Redis 적용과 MySQL 완료 표시 사이의 틈은 Lua가 offset과 함께 기록하는 <code>db-pending</code> set으로 메운다.</p>
+<h3 id="복구-제어-흐름">복구 제어 흐름</h3>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" width="100%" role="img" aria-label="Redis RDB 롤백 복구 흐름 비교">
+  <style>
+    .bx    { rx: 7; stroke-width: 1.5; }
+    .app   { fill: #f1f5f9; stroke: #64748b; }
+    .sql   { fill: #eff6ff; stroke: #2563eb; }
+    .redis { fill: #fef2f2; stroke: #dc2626; }
+    .mq    { fill: #f5f3ff; stroke: #7c3aed; }
+    .t     { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl   { font-size: 12px; font-weight: 700; }
+    .sub   { font-size: 10.5px; fill: #475569; }
+    .cap   { font-size: 11px; font-weight: 700; fill: #64748b; letter-spacing: .05em; }
+    .chip  { font-size: 12.5px; font-weight: 700; fill: #ffffff; }
+    .ln    { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+    .time  { font-size: 15px; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="a5" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="470" fill="#ffffff"/>
+
+  <!-- 실험 절차 -->
+  <rect x="24" y="20" width="852" height="86" rx="9" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="42" y="42" class="t cap">실험 절차 — 일관된 RDB 롤백</text>
+  <text x="42" y="63" class="t sub">① batch consumer 정지 → SAVE로 시점 K 보존   ② 새 제출 tail을 완전히 적용한 시점 N의 scoreboard SHA-256 digest 기록</text>
+  <text x="42" y="82" class="t sub">③ Redis SIGKILL 후 K의 RDB로 되돌림   ④ checkpoint와 digest가 N으로 돌아올 때까지 500ms마다 확인</text>
+  <text x="42" y="99" class="t sub" fill="#b91c1c">일부 key만 지우는 시험이 아니라 scoreboard와 checkpoint가 함께 되감기는 롤백이다. 롤백된 tail은 약 90건.</text>
+
+  <!-- ===== outbox ===== -->
+  <rect x="24" y="140" width="86" height="28" rx="6" fill="#94a3b8"/>
+  <text x="67" y="159" class="t chip" text-anchor="middle">outbox</text>
+
+  <rect x="130" y="132" width="170" height="52" class="bx redis"/>
+  <text x="215" y="154" class="t ttl" text-anchor="middle">Redis가 K로 롤백</text>
+  <text x="215" y="171" class="t sub" text-anchor="middle">DB checkpoint는 그대로</text>
+
+  <rect x="326" y="132" width="170" height="52" class="bx app"/>
+  <text x="411" y="154" class="t ttl" text-anchor="middle">recovery scan</text>
+  <text x="411" y="171" class="t sub" text-anchor="middle">5초 주기 · 10행</text>
+
+  <rect x="522" y="132" width="170" height="52" class="bx sql"/>
+  <text x="607" y="154" class="t ttl" text-anchor="middle">어긋남 탐지</text>
+  <text x="607" y="171" class="t sub" text-anchor="middle">lost-tail · duplicate seq</text>
+
+  <rect x="718" y="132" width="158" height="52" class="bx sql"/>
+  <text x="797" y="154" class="t ttl" text-anchor="middle">DB requeue</text>
+  <text x="797" y="171" class="t sub" text-anchor="middle">→ Lua 재적용</text>
+
+  <line x1="300" y1="158" x2="320" y2="158" class="ln" marker-end="url(#a5)"/>
+  <line x1="496" y1="158" x2="516" y2="158" class="ln" marker-end="url(#a5)"/>
+  <line x1="692" y1="158" x2="712" y2="158" class="ln" marker-end="url(#a5)"/>
+
+  <text x="130" y="212" class="t time" fill="#c2410c">30.954s</text>
+  <text x="216" y="212" class="t sub">— 어긋남을 "찾아야" 하고, 5초 스캔 주기가 복구 시간의 하한을 만든다</text>
+
+  <line x1="24" y1="234" x2="876" y2="234" stroke="#e2e8f0"/>
+
+  <!-- ===== stream ===== -->
+  <rect x="24" y="272" width="86" height="28" rx="6" fill="#0f766e"/>
+  <text x="67" y="291" class="t chip" text-anchor="middle">stream</text>
+
+  <rect x="130" y="264" width="222" height="52" class="bx redis"/>
+  <text x="241" y="286" class="t ttl" text-anchor="middle">상태 + offset이 함께 K로 롤백</text>
+  <text x="241" y="303" class="t sub" text-anchor="middle">같은 스냅샷 경계를 공유</text>
+
+  <rect x="378" y="264" width="222" height="52" class="bx app"/>
+  <text x="489" y="286" class="t ttl" text-anchor="middle">consumer가 offset 역행 감지</text>
+  <text x="489" y="303" class="t sub" text-anchor="middle">메모리의 마지막 offset과 비교</text>
+
+  <rect x="626" y="264" width="250" height="52" class="bx mq"/>
+  <text x="751" y="286" class="t ttl" text-anchor="middle">x-stream-offset = K+1 재구독</text>
+  <text x="751" y="303" class="t sub" text-anchor="middle">stream에서 직접 replay</text>
+
+  <line x1="352" y1="290" x2="372" y2="290" class="ln" marker-end="url(#a5)"/>
+  <line x1="600" y1="290" x2="620" y2="290" class="ln" marker-end="url(#a5)"/>
+
+  <text x="130" y="344" class="t time" fill="#0f766e">2.038s / 2.533s</text>
+  <text x="272" y="344" class="t sub">— 되감긴 offset 자체가 재시작점이므로 탐지 단계가 없다</text>
+
+  <!-- 판정 한계 -->
+  <rect x="24" y="368" width="852" height="82" rx="9" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="42" y="392" class="t ttl" fill="#9a3412">이 시간 차이를 성능 배수로 인용하지 않는다</text>
+  <text x="42" y="413" class="t sub">outbox 복구는 시간 절약을 위해 축소된 기준점(참가자 30명 · 73 results)을 사용했고, 이는 outbox에 유리한 조건이다.</text>
+  <text x="42" y="431" class="t sub">stream 두 실행도 의미 상태 수렴 뒤 Docker health 회복 전에 검사한 harness 문제로 최종 게이트가 FAIL이라 수렴 상한 관찰값이다.</text>
+  <text x="42" y="449" class="t sub" fill="#9a3412">드러나는 것은 시간이 아니라 제어 흐름의 복잡도 차이다 — 한쪽은 탐지가 필요하고, 다른 쪽은 필요 없다.</text>
+</svg></div><figcaption><strong>그림 5.</strong> consumer를 멈추고 스냅샷 K를 만든 뒤, 제출 tail 약 90건을 더 적용한 상태 N의
+스코어보드 digest를 기록한다. Redis를 SIGKILL하고 K의 RDB로 되돌린 다음 digest가 N으로 돌아올
+때까지 잰다. 일부 key만 지우는 시험이 아니라 스코어보드와 checkpoint가 함께 되감기는 롤백이다.</figcaption></figure>
+<p>수렴까지 outbox는 31.0초, stream은 2.0–2.5초였다.</p>
+<pre><code>outbox   어긋남 탐지  →  복구 스캔이 대상 행을 되살림(주기 × 배치 상한)  →  적용
+stream   되감긴 offset + 1로 재구독  →  적용
+</code></pre>
+<p><strong>남는 차이는 시간이 아니라 노브다.</strong> outbox는 추격 속도를 설정값이 정하므로 복구 시간이 손실 구간
+크기에 비례한다. stream은 되감긴 offset이 곧 재시작점이라 정할 값이 없다. 두 구현의 처리 성능은
+서로 밀어낼 정도의 차이가 아니었으므로, 남는 판단 기준이 이것이었다.
+31초의 내역은 <a href="measurements.html">측정 기록</a> §8.1에 있다.</p>
+<h3 id="다시-흘려보내도-안전한가">다시 흘려보내도 안전한가</h3>
+<p>위 복구가 성립하려면 재적용이 안전해야 한다. 그런데 처음 구조는 그렇지 않았다.
+penalty는 <code>정답 시각(분) + 그 이전 오답 수 × 5</code>로 계산한다.</p>
+<pre><code>채점 완료 순서 ≠ 제출 순서
+  t=10분  WRONG    (채점 2초)
+  t=12분  ACCEPTED (채점 10ms)      → 도착은 ACCEPTED 먼저
+
+              실시간 Redis    DB 재구성
+  penalty          12            17      ← 참가자가 본 순위 ≠ 최종 순위
+</code></pre>
+<p><code>accepted</code> 플래그와 오답 수를 누적하고 정답이 오면 그 시점 값으로 penalty를 확정하는 방식은,
+이벤트가 제출 순서대로 도착한다는 가정을 숨기고 있었다. 늦게 온 오답은 버려졌다.</p>
+<p>누적을 버리고 지금까지 본 제출 사실 자체를 보존한 뒤, 이벤트마다 그 문제의 기여도를 처음부터
+다시 계산하도록 바꿨다. 같은 오답이 중복 도착하면 같은 필드를 덮어쓰고, 더 이른 정답이 늦게
+도착하면 정답 시각을 교체하고 다시 계산한다. summary에는 이전 기여도와의 <strong>차이만</strong> 더한다.
+회귀 테스트로 세 가지를 고정했다 — 위 시나리오의 최종 penalty가 17일 것, 같은 이벤트 집합을
+무작위 순서로 적용해도 결과가 같을 것, 실시간 Redis 경로와 MySQL 재구성 경로가 같은 순위를 낼 것.</p>
 </section>
-
+<section class="chapter" id="ch4">
+  <p class="chapter-no">CHAPTER 4</p>
+  <h2>남은 한계</h2>
+  <p class="chapter-lede"><strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, 재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, 그리고 대회 제출과 일반 제출이 같은 큐를 쓴다는 것.</p>
+<p><strong>채점이 <code>Thread.sleep</code>이다.</strong> 블로킹 시간만 흉내 낼 뿐 커넥션 풀 고갈, 타임아웃, 부분 실패를
+모델링하지 않는다. 실제 채점 서버를 붙이면 실패 모드가 하나 더 생긴다.</p>
+<p><strong>검증한 장애는 프로세스 즉사 하나다.</strong> SIGKILL은 TCP를 즉시 끊으므로 broker가 곧바로 감지한다.
+하트비트 타임아웃이 실제로 문제가 되는 경우 — 프로세스는 살아 있는데 네트워크가 끊긴 경우 —
+는 재현하지 않았다. RabbitMQ도 단일 노드라 stream replication과 leader failover는 검증 밖이다.</p>
+<p><strong>부대 I/O를 줄이지 않았다.</strong> 슬롯 하나가 메시지에 묶이는 시간은 <code>32 ÷ 150 = 213ms</code>인데 채점은
+147.5ms뿐이고, 나머지 65ms는 결과 배치 쓰기·outbox insert·ACK 왕복이다. 결과 writer가 worker
+1개에 batch 32라 슬롯 시간의 31%가 여기 묶여 있다. <strong>슬롯을 늘릴 수 없는 구조에서 처리량을
+올리는 유일한 방향인데 아직 측정하지 않았다.</strong></p>
+<p><strong>대회 제출과 일반 제출이 같은 파이프라인을 쓴다.</strong> 일반 제출은 전체 테스트케이스를 돌리므로
+한 건에 30초까지 걸릴 수 있다고 가정한다. <code>prefetch=1</code>은 consumer 하나가 한 건만 쥐게 하지만
+<strong>그 하나가 30초를 쥐고 있는 것 자체는 막지 못한다.</strong> 슬롯 32개 중 몇이 일반 제출에 물려 있으면
+대회 제출의 실효 용량이 그만큼 줄고, 위에서 본 <code>ready ÷ 처리율</code> 관계 그대로 꼬리가 늘어난다.
+큐를 분리하거나 대회 제출에 별도 슬롯을 주는 것이 다음 과제다.</p>
+</section>
+<section class="chapter" id="보조-자료">
+  <p class="chapter-no">APPENDIX</p>
+  <h2>보조 자료</h2>
+  <p class="chapter-lede">본문은 주장이고, 근거 문서는 그 주장의 출처다.
+    <strong>본문에 실린 모든 수치는 런 이름과 함께 추적된다.</strong></p>
+  <div class="links">
+    <a class="link-card" href="measurements.html">
+      <b>부하 · 회복 측정 기록</b>
+      <span>측정 환경 기준선, 런 11개의 조건과 원자료, 적체 · 복구 그래프,
+        지표와 알림 규칙, 테스트 범위, 그리고 폐기한 실행과 그 이유.</span>
+    </a>
+    <a class="link-card" href="https://github.com/tmdrud0/web" target="_blank" rel="noopener">
+      <b>github.com/tmdrud0/web</b>
+      <span>코드. 역할별(web / batch / judge) 기동 계약과 실행 방법은 README에 있다.</span>
+    </a>
+    <a class="link-card" href="mailto:tmdrud049@gmail.com">
+      <b>tmdrud049@gmail.com</b>
+      <span>연락처. 이 문서에 대한 질문이라면 어느 장의 어느 수치인지만 알려주면 된다.</span>
+    </a>
+  </div>
+</section>
 </main>
-
-<footer class="wrap">
-  <span>온라인 저지 채점 파이프라인 — 설계 포트폴리오</span>
-  <span class="mono">Java · Spring · MySQL · Redis · RabbitMQ</span>
+</div>
+<footer class="site-foot">
+  <div class="inner">
+    <div><span>신승경 · 백엔드 개발자</span><span>tmdrud049@gmail.com</span></div>
+    <div>
+      <a href="https://github.com/tmdrud0/web" target="_blank" rel="noopener">저장소</a>
+      <a href="measurements.html">측정 기록</a>
+      <a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">Codeforces</a>
+    </div>
+  </div>
 </footer>
+<script>
+(function () {
+  var bar = document.getElementById('progress');
+  var ticking = false;
+  function paint() {
+    var h = document.documentElement;
+    var max = h.scrollHeight - h.clientHeight;
+    bar.style.transform = 'scaleX(' + (max > 0 ? h.scrollTop / max : 0) + ')';
+    ticking = false;
+  }
+  addEventListener('scroll', function () {
+    if (!ticking) { ticking = true; requestAnimationFrame(paint); }
+  }, { passive: true });
+  paint();
+
+  var links = [].slice.call(document.querySelectorAll('.toc a[href^="#"]'));
+  if (!links.length || !('IntersectionObserver' in window)) return;
+  var byId = {};
+  var targets = [];
+  links.forEach(function (a) {
+    var el = document.getElementById(decodeURIComponent(a.hash.slice(1)));
+    if (el) { byId[el.id] = a; targets.push(el); }
+  });
+  var visible = new Set();
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) visible.add(e.target.id); else visible.delete(e.target.id);
+    });
+    // 장과 그 안의 소제목이 같이 걸린다. 문서 순서상 마지막 = 지금 읽는 자리.
+    var current = null;
+    for (var i = targets.length - 1; i >= 0; i--) {
+      if (visible.has(targets[i].id)) { current = targets[i].id; break; }
+    }
+    if (!current) return;
+    links.forEach(function (a) { a.classList.remove('on', 'cur'); });
+    var leaf = byId[current];
+    leaf.classList.add('on');
+    var owner = leaf.getAttribute('data-ch');
+    if (owner && byId[owner]) byId[owner].classList.add('cur');
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+  targets.forEach(function (el) { io.observe(el); });
+})();
+</script>
 </body>
 </html>
