@@ -96,10 +96,9 @@
 <li><a href="#다시-흘려보내도-안전한가" data-ch="ch3">다시 흘려보내도 안전한가</a></li>
 </ol>
 </li>
-<li><a href="#ch4">4. 랭킹 조회와 데드락</a>
+<li><a href="#ch4">4. 랭킹 조회</a>
 <ol class="sub">
 <li><a href="#offset은-앞의-row를-버리는-비용이다" data-ch="ch4">OFFSET은 앞의 row를 버리는 비용이다</a></li>
-<li><a href="#락-순서를-정하는-것은-인덱스다" data-ch="ch4">락 순서를 정하는 것은 인덱스다</a></li>
 </ol>
 </li>
 <li><a href="#ch5">5. 남은 한계</a>
@@ -138,12 +137,11 @@
       <a class="ref" href="#백로그는-병목-바로-앞에만-앉는다">→ 2장 · 병목은 채점인데 CPU 때문은 아니다</a>
     </article>
     <article class="strength">
-      <h3>실행계획과 락 경로까지 내려가서 원인을 가른다.</h3>
+      <h3>실행계획까지 내려가서 원인을 가른다.</h3>
       <p>깊은 페이지 랭킹 조회가 233초까지 갔다. 집계 테이블과 스냅숏으로 뒤쪽 페이지를
         0.113ms까지 줄였지만 solved 랭킹은 아직 47.7초다. 병목이 tie group 안으로 옮겨간
-        것이고, 실행계획이 그걸 보여준다. 데드락 세 건도
-        격리 수준·잠금 진입점·인덱스로 원인 층이 매번 달랐다.</p>
-      <a class="ref" href="#ch4">→ 4장 · 랭킹 조회와 데드락</a>
+        것이고, 실행계획이 그걸 보여준다. 앞 페이지에서는 오히려 느려진 것도 같이 적었다.</p>
+      <a class="ref" href="#ch4">→ 4장 · 랭킹 조회</a>
     </article>
   </div>
 </section>
@@ -520,13 +518,6 @@ outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으�
 낮출 수도 없다. quorum queue와 persistent message를 그대로 유지해야 한다.
 대신 제출 원본과 <code>contest_judge_outbox</code>를 같은 트랜잭션에 commit해서 중복 여부의 권위는 DB에
 남겼다.</p>
-<p>제출 저장은 chunk 단위 bulk INSERT이고, 중복 한 건이 chunk 전체를 rollback시키지 않도록
-<code>INSERT IGNORE</code>를 쓴다. 문제는 이것이 unique 충돌만 무시하지 않는다는 것이다. FK 위반처럼 행이
-경고와 함께 조용히 사라지는 경우도 삼키고, Connector/J가 batch를 multi-values로 rewrite하면
-update count가 <code>SUCCESS_NO_INFO(-2)</code>로 와서 어느 행이 무시됐는지 드라이버가 알려주지 않는다.
-그래서 INSERT 직후 같은 트랜잭션에서 예약 ID와 dedup key를 다시 조회해 분류하고, 설명되지 않는
-누락은 정합성 예외로 rollback시킨다. 불량 건만 실패시킨 뒤 나머지는 예약해 둔 같은 ID로 한 번 더
-insert하므로, chunk당 DB 시도는 최대 2회다.</p>
 <h3 id="백로그는-병목-바로-앞에만-앉는다">백로그는 병목 바로 앞에만 앉는다</h3>
 <p>제출은 세 단계를 지나고 각 단계의 상한이 다르다. 유입 1,014/s, relay 640/s, 채점 150/s로
 <strong>유입이 채점의 6.8배</strong>다. 이 격차를 durable outbox가 흡수하는 것이 설계 의도였다.</p>
@@ -1038,11 +1029,11 @@ penalty는 <code>정답 시각(분) + 그 이전 오답 수 × 5</code>로 계�
 </section>
 <section class="chapter" id="ch4">
   <p class="chapter-no">CHAPTER 4</p>
-  <h2>랭킹 조회와 데드락</h2>
-  <p class="chapter-lede">읽기 경로와 잠금에서 부딪힌 것. 깊은 페이지 랭킹 조회가 233초까지 갔고, 집계 테이블과 스냅숏으로 0.113ms까지 줄였다. 데드락 세 건은 격리 수준 · 잠금 진입점 · 인덱스로 원인 층이 매번 달랐다.</p>
-<p>앞 두 장은 쓰기와 전달 경로다. 이 장은 같은 데이터를 읽을 때와 잠글 때 부딪힌 것이다.
-둘 다 처음 만든 구조가 동작은 했고, 데이터가 커지거나 노드가 늘었을 때만 무너졌다.
-코드를 보고는 알 수 없었다. 실행계획과 락 기록까지 내려가서야 원인이 갈렸다.</p>
+  <h2>랭킹 조회</h2>
+  <p class="chapter-lede">읽는 경로에서 부딪힌 것. 깊은 페이지 랭킹 조회가 233초까지 갔고, 집계 테이블과 스냅숏으로 0.113ms까지 줄였다. 다만 solved 랭킹은 아직 47.7초이고, 병목이 사라진 자리가 아니라 tie group 안으로 옮겨간 것이다.</p>
+<p>앞 두 장은 쓰기와 전달 경로다. 이 장은 같은 데이터를 읽는 경로에서 부딪힌 것이다.
+처음 만든 구조가 동작은 했고, 데이터가 커졌을 때만 무너졌다. 코드를 보고는 알 수 없었다.
+실행계획까지 내려가서야 원인이 갈렸다.</p>
 <h3 id="offset은-앞의-row를-버리는-비용이다"><code>OFFSET</code>은 앞의 row를 버리는 비용이다</h3>
 <p>랭킹 페이지에는 "내 순위가 있는 페이지로 바로 가기"가 있다. 커서 페이지네이션을 쓸 수 없다.
 사용자가 임의의 지점으로 건너뛰기 때문이다.</p>
@@ -1220,157 +1211,11 @@ solved는 제출마다 바뀌어 snapshot이 맞지 않으므로 1씩 증가만 
 저장소에는 무작위 rank 1,000개로 같은 비교를 돌려 min·p50·p95·max를 내는
 <code>RankAroundBenchmarkLoadTest</code>가 있고, 위 표를 대신하려면 그것으로 다시 재야 한다.</p>
 </blockquote>
-<h3 id="락-순서를-정하는-것은-인덱스다">락 순서를 정하는 것은 인덱스다</h3>
-<p>대회 입력과 최종화, 대회 중 일반 제출, 스케일 아웃을 겹쳐 돌리자 데드락이 났다. 외래키를 걷어내고
-접근 순서를 정렬하는 것으로 잡히지 않는 것이 세 번 남았다. 당시 채점 분배는 2장의 V3, 즉
-DB 상태값으로 작업을 claim하던 구조다.</p>
-<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="100%" role="img" aria-label="데드락 세 번과 각각 락 순서를 정한 층">
-  <style>
-    .bx   { rx: 7; stroke-width: 1.5; }
-    .sql  { fill: #eff6ff; stroke: #2563eb; }
-    .warn { fill: #fff7ed; stroke: #ea580c; }
-    .ok   { fill: #f0fdfa; stroke: #0f766e; }
-    .t    { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
-    .ttl  { font-size: 13px; font-weight: 700; }
-    .sub  { font-size: 11px; fill: #475569; }
-    .mono { font-family: Consolas,'Courier New',monospace; font-size: 10.5px; fill: #334155; }
-    .tag  { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; }
-    .ln   { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
-    .cross{ stroke: #ea580c; stroke-width: 1.6; fill: none; stroke-dasharray: 5 3; }
-    .fix  { font-size: 11px; fill: #0f766e; font-weight: 700; }
-    .cap  { font-size: 11px; fill: #64748b; }
-  </style>
-  <defs>
-    <marker id="a" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
-      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
-    </marker>
-    <marker id="ao" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
-      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#ea580c"/>
-    </marker>
-  </defs>
-
-  <rect width="900" height="560" fill="#ffffff"/>
-
-  <text x="24" y="26" class="t ttl" font-size="14">세 번 모두 "락 순서" 문제였지만, 순서를 정한 것은 매번 달랐다</text>
-  <text x="24" y="44" class="t cap">왼쪽이 두 트랜잭션이 실제로 잠근 순서 · 주황 점선이 교차 대기 · 오른쪽이 고친 지점</text>
-
-  <!-- ================= ① 격리 수준 ================= -->
-  <text x="24" y="86" class="t tag" fill="#ea580c">① 격리 수준</text>
-  <text x="122" y="86" class="t sub">REPEATABLE READ 에서 gap 락이 레코드 락보다 먼저 잡힌다</text>
-
-  <rect x="24" y="98" width="250" height="52" class="bx warn"/>
-  <text x="38" y="118" class="t ttl" font-size="12">TX A · claim UPDATE</text>
-  <text x="38" y="136" class="t mono">gap lock  →  record lock</text>
-
-  <rect x="24" y="164" width="250" height="52" class="bx warn"/>
-  <text x="38" y="184" class="t ttl" font-size="12">TX B · INSERT</text>
-  <text x="38" y="202" class="t mono">record lock  →  gap lock</text>
-
-  <path d="M282,124 C314,124 314,190 282,190" class="cross" marker-end="url(#ao)"/>
-  <path d="M282,190 C314,190 314,124 282,124" class="cross" marker-end="url(#ao)"/>
-  <text x="326" y="152" class="t sub" fill="#ea580c">방향이 반대라 교차</text>
-
-  <line x1="470" y1="157" x2="516" y2="157" class="ln" marker-end="url(#a)"/>
-  <rect x="524" y="122" width="352" height="70" class="bx ok"/>
-  <text x="540" y="143" class="t fix">READ COMMITTED 로 낮춘다</text>
-  <text x="540" y="163" class="t sub">claim UPDATE 가 gap 락을 잡지 않는다.</text>
-  <text x="540" y="180" class="t sub">id 가 1씩 증가해도 순서는 격리 수준이 정했다.</text>
-
-  <!-- ================= ② 잠금 진입점 ================= -->
-  <line x1="24" y1="238" x2="876" y2="238" stroke="#e2e8f0" stroke-width="1"/>
-
-  <text x="24" y="266" class="t tag" fill="#ea580c">② 잠금 진입점</text>
-  <text x="122" y="266" class="t sub">ORDER BY 로 대상 순서를 맞춰도, 어디서부터 타는지가 다르다</text>
-
-  <rect x="24" y="278" width="250" height="52" class="bx warn"/>
-  <text x="38" y="298" class="t ttl" font-size="12">회수 UPDATE … WHERE status</text>
-  <text x="38" y="316" class="t mono">secondary idx  →  PK</text>
-
-  <rect x="24" y="344" width="250" height="52" class="bx warn"/>
-  <text x="38" y="364" class="t ttl" font-size="12">완료 UPDATE … WHERE id</text>
-  <text x="38" y="382" class="t mono">PK  →  secondary idx</text>
-
-  <path d="M282,304 C314,304 314,370 282,370" class="cross" marker-end="url(#ao)"/>
-  <path d="M282,370 C314,370 314,304 282,304" class="cross" marker-end="url(#ao)"/>
-  <text x="326" y="332" class="t sub" fill="#ea580c">정렬과 무관하게 교차</text>
-
-  <line x1="470" y1="337" x2="516" y2="337" class="ln" marker-end="url(#a)"/>
-  <rect x="524" y="292" width="352" height="90" class="bx ok"/>
-  <text x="540" y="313" class="t fix">진입점을 하나로 — 먼저 고르고, id 로만 UPDATE</text>
-  <text x="540" y="333" class="t mono">SELECT … FOR UPDATE SKIP LOCKED</text>
-  <text x="540" y="351" class="t mono">UPDATE … WHERE id = ?</text>
-  <text x="540" y="371" class="t sub">지금 relay 의 outbox claim 이 이 형태다.</text>
-
-  <!-- ================= ③ 인덱스 ================= -->
-  <line x1="24" y1="418" x2="876" y2="418" stroke="#e2e8f0" stroke-width="1"/>
-
-  <text x="24" y="446" class="t tag" fill="#ea580c">③ 인덱스</text>
-  <text x="122" y="446" class="t sub">UPDATE 가 건드리는 보조 인덱스끼리 교차한다 — 쿼리문에 적혀 있지 않다</text>
-
-  <rect x="24" y="458" width="250" height="40" class="bx sql"/>
-  <text x="38" y="482" class="t mono">(status, claimed_at, id) 보유</text>
-
-  <rect x="24" y="506" width="250" height="40" class="bx sql"/>
-  <text x="38" y="530" class="t mono">(status, id) 보유</text>
-
-  <path d="M282,478 C314,478 314,526 282,526" class="cross" marker-end="url(#ao)"/>
-  <path d="M282,526 C314,526 314,478 282,478" class="cross" marker-end="url(#ao)"/>
-  <text x="326" y="506" class="t sub" fill="#ea580c">서로 상대를 기다림</text>
-
-  <line x1="470" y1="502" x2="516" y2="502" class="ln" marker-end="url(#a)"/>
-  <rect x="524" y="466" width="352" height="72" class="bx ok"/>
-  <text x="540" y="487" class="t fix">(status, id) 를 지운다</text>
-  <text x="540" y="507" class="t sub">쿼리 패턴에는 앞의 하나면 충분했다.</text>
-  <text x="540" y="524" class="t sub">더해서가 아니라 빼서 고친 경우다.</text>
-</svg></div><figcaption><strong>그림 7.</strong> 세 번 모두 "락을 잡는 순서"가 문제였지만 순서를 정하는 주체가 매번 달랐다.
-격리 수준, 잠금 진입점, 그리고 어떤 보조 인덱스가 존재하는가. 셋 다 쿼리문에는 보이지 않는다.</figcaption></figure>
-<h4 id="①-격리-수준-증가하는-키인데도-gap-락이-교차했다">① 격리 수준: 증가하는 키인데도 gap 락이 교차했다</h4>
-<pre><code class="language-sql">-- claim: PENDING 을 잡아 PROCESSING 으로
-UPDATE contest_submission SET judge_status = 'PROCESSING'
-WHERE judge_status = 'PENDING' ORDER BY id LIMIT 100;
-
--- 같은 시간에 들어오는 신규 제출
-INSERT INTO contest_submission (..., judge_status = 'PENDING', ...) VALUES (...);
-</code></pre>
-<p>id가 1씩 증가하니 두 문장이 같은 방향으로 잠글 것이라 봤다. 실제로는 REPEATABLE READ에서
-claim UPDATE가 레코드 락보다 먼저 gap 락을 잡고, INSERT는 레코드 락을 잡은 뒤 gap을 기다린다.
-방향이 반대라 교차한다. 격리 수준을 READ COMMITTED로 낮춰 claim UPDATE가 gap 락을 잡지 않게 했다.</p>
-<h4 id="②-잠금-진입점-한쪽은-보조-인덱스-한쪽은-기본-키">② 잠금 진입점: 한쪽은 보조 인덱스, 한쪽은 기본 키</h4>
-<pre><code class="language-sql">-- 오래 붙잡힌 작업 회수
-UPDATE contest_submission SET judge_status = 'PENDING'
-WHERE judge_status = 'PROCESSING' AND judge_claimed_at &lt; ?
-ORDER BY judge_claimed_at, id LIMIT ?;
-
--- 처리 완료 기록
-UPDATE contest_submission SET judge_status = 'DONE'
-WHERE id = ? AND judge_status = 'PROCESSING' AND judge_claim_token = ?;
-</code></pre>
-<p><code>ORDER BY</code>로 대상 순서를 맞추면 될 줄 알았다. 한쪽은 보조 인덱스부터, 다른 쪽은 기본 키부터 락을
-타므로 정렬해 둔 순서와 무관하게 교차했다. <code>SELECT … FOR UPDATE SKIP LOCKED</code>로 대상 id를 먼저
-고르고, 양쪽 모두 <code>WHERE id = ?</code>로만 UPDATE하게 나눴다.</p>
-<h4 id="③-인덱스-update가-건드리는-보조-인덱스끼리-교차했다">③ 인덱스: UPDATE가 건드리는 보조 인덱스끼리 교차했다</h4>
-<p>그래도 났다. UPDATE가 수정하는 보조 인덱스에 락이 잠깐 걸렸다 풀리는데 그것이 다른 row의 수정과
-교차했다. 한쪽은 <code>(status, claimed_at, id)</code>를 잡고 <code>(status, id)</code>를 기다리고, 반대쪽은 반대였다.
-당시 쿼리 패턴에는 <code>(status, claimed_at, id)</code> 하나면 충분했으므로 <code>(status, id)</code>를 지웠다.
-인덱스를 빼서 고친 경우다.</p>
-<p>락 순서를 코드 레벨에서 맞추는 것만으로는 부족하다. 어떤 인덱스가 있느냐가 잠금 경로를 정하고,
-그건 쿼리문에 적혀 있지 않다. 그래서 순서를 맞추는 것과 데드락이 나도 회복되는 구조(재시도·멱등)를
-함께 두는 쪽으로 결론이 났다.</p>
-<p>2장에서 broker로 넘어간 이유의 나머지 절반이 이것이다. 2장에는 timeout·lease 값을 정할 근거가
-없었다고 적었는데, 그 구조를 유지하는 비용에는 이 세 번도 들어 있었다. 다만 ②에서 얻은 형태는
-지금도 남아 있다. relay가 judge outbox를 claim하는 코드도 <code>SELECT … FOR UPDATE SKIP LOCKED</code>로
-id를 고른 뒤 <code>WHERE id = ?</code>로만 UPDATE한다.</p>
-<blockquote>
-<p>재현 절차를 남기지 않았다. 세 번 모두 부하를 겹쳐 돌리다 만났고, <code>SHOW ENGINE INNODB STATUS</code>의
-데드락 기록과 실행계획으로 원인을 좁혔다. 회귀 테스트로 고정하지 못했으므로 "다시 안 난다"고는
-말하지 않는다. 지금 구조에서 같은 경로가 사라진 것과, 그 경로가 안전하다는 것을 증명한 것은
-다른 이야기다.</p>
-</blockquote>
 </section>
 <section class="chapter" id="ch5">
   <p class="chapter-no">CHAPTER 5</p>
   <h2>남은 한계</h2>
-  <p class="chapter-lede">검증하지 않은 것을 먼저 적는다. 채점이 <code>Thread.sleep</code>이라는 것, 재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, 대회·일반 제출이 같은 큐를 쓴다는 것, 그리고 데드락에 회귀 테스트가 없다는 것.</p>
+  <p class="chapter-lede">검증하지 않은 것을 먼저 적는다. 채점이 <code>Thread.sleep</code>이라는 것, 재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, 대회·일반 제출이 같은 큐를 쓴다는 것, 그리고 solved 랭킹의 tie group.</p>
 <p>채점이 <code>Thread.sleep</code>이다. 블로킹 시간만 흉내 낼 뿐 커넥션 풀 고갈, 타임아웃, 부분 실패를
 모델링하지 않는다. 실제 채점 서버를 붙이면 실패 모드가 하나 더 생긴다.</p>
 <p>검증한 장애는 프로세스 즉사 하나다. SIGKILL은 TCP를 즉시 끊으므로 broker가 곧바로 감지한다.
@@ -1389,8 +1234,6 @@ id를 고른 뒤 <code>WHERE id = ?</code>로만 UPDATE한다.</p>
 같은 solved count 안에서는 다시 offset이라 뒤쪽 페이지가 47.7초다. tie group 안에 보조 순서를
 두거나 solved도 streak처럼 snapshot으로 돌리는 두 방향이 있는데, 갱신 비용과 조회 비용 중 어디에
 부담을 둘지를 정하지 못했다. 제출마다 바뀌는 값이라 snapshot 주기가 곧 순위의 신선도다.</p>
-<p>데드락 세 건은 회귀 테스트가 없다. 지금 구조에서 그 경로가 사라진 것과, 그 경로가 안전하다는
-것을 증명한 것은 다르다. 재현 절차를 남기지 못한 것이 가장 아쉽다.</p>
 </section>
 <section class="chapter" id="보조-자료">
   <p class="chapter-no">APPENDIX</p>
