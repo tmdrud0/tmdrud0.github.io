@@ -58,7 +58,7 @@
     </ul>
     <p class="metrics-caveat">단일 호스트에서, 부하 발생기와 서버가 자원을 나눠 쓰는
       조건으로 쟀다. 절대 성능으로 읽으면 안 된다. 구조가 어디서 막히는가의 증거로 읽어야 하고,
-      무엇을 재지 않았는지는 <a href="#측정-전제">측정 전제</a>에 적었다.</p>
+      무엇을 재지 않았는지는 <a href="measurements.html#1-이-수치들이-설명하지-않는-것">측정 기록 §1</a>에 적었다.</p>
 
     <ul class="contact">
       <li><a href="mailto:tmdrud049@gmail.com"><span class="k">이메일</span> tmdrud049@gmail.com</a></li>
@@ -79,9 +79,6 @@
 <li><a href="#핵심-역량">핵심 역량</a>
 </li>
 <li><a href="#ch1">1. 온라인 저지</a>
-<ol class="sub">
-<li><a href="#측정-전제" data-ch="ch1">측정 전제</a></li>
-</ol>
 </li>
 <li><a href="#ch2">2. 대회 제출 파이프라인</a>
 <ol class="sub">
@@ -115,24 +112,18 @@
     어떤 실험으로 그렇게 말할 수 있는지까지 이어진다.</p>
   <div class="strengths">
     <article class="strength">
-      <h3>정합성을 순서와 중복에 의존하지 않게 설계한다.</h3>
-      <p>채점 완료 순서는 제출 순서와 다르다. 누적 방식 스코어보드는 이것 때문에 대회 중
-        참가자가 본 순위와 최종 순위를 다르게 만들었다. 누적을 버리고 매번 재계산하도록 바꿨다.</p>
+      <h3>장애를 전제로 설계하고, 회복 경로를 직접 죽여서 확인한다.</h3>
+      <p>채점 작업 분배를 DB claim에서 RabbitMQ work queue로 옮기면서 timeout·lease·sweeper를
+        broker에 넘겼다. 노드를 SIGKILL해도 미확인 메시지는 4초 만에 회수됐고 end-to-end max는
+        9.8초였다. 제출 1,000/s를 150초 넣었을 때 127,687건이 전부 채점됐고 유실은 0이다.</p>
+      <a class="ref" href="#ch2">→ 2장 · 대회 제출 파이프라인</a>
+    </article>
+    <article class="strength">
+      <h3>복구를 쉽게 만드는 것은 처리 성능이 아니라 상태의 위치라고 판단한다.</h3>
+      <p>스코어보드 전달을 DB outbox에서 RabbitMQ stream으로 옮긴 이유가 그것이다. 스코어보드와
+        재시작 지점이 같은 스냅샷 안에 있으면 되감긴 offset + 1이 곧 재시작점이라 정할 설정값이
+        없다. Redis를 RDB로 되돌린 뒤 2초대에 수렴했다.</p>
       <a class="ref" href="#ch3">→ 3장 · 스코어보드 전달·복구 경로</a>
-    </article>
-    <article class="strength">
-      <h3>측정 조건을 의심하고, 근거로 쓸 수 있는 수치와 없는 수치를 구분한다.</h3>
-      <p><code>prefetch</code>를 올렸을 때의 꼬리 악화는 포화 상태에서 재면 +25%로 보이고,
-        포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 함께 키워 효과를 희석하기
-        때문이다. 부하 발생기와 서버가 같은 호스트를 나눠 쓰므로 절대 처리량은 용량 수치로
-        쓰지 않고, 모든 비교는 짝실험으로 설계했다.</p>
-      <a class="ref" href="measurements.html#73-같은-변경을-포화-상태에서-재면">→ 측정 기록 §7.3 · 포화 여부에 따른 차이</a>
-    </article>
-    <article class="strength">
-      <h3>내가 틀린 것을 측정으로 찾아낸다.</h3>
-      <p>judge CPU가 72–78%로 관측돼 CPU 한도가 병목이라고 판단했다. 두 런의 CPU 시계열을
-        비교하니 JIT 컴파일이 감쇠하는 곡선이었고, 샘플러의 “피크 CPU”가 그 초반 스파이크를
-        집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
     </article>
     <article class="strength">
       <h3>실행계획까지 내려가서 원인을 가른다.</h3>
@@ -311,18 +302,6 @@ MySQL 파랑 · Redis 빨강 · RabbitMQ 보라 · 애플리케이션 회색. �
 <p>저장소마다 역할을 하나씩만 준다.</p>
 <ul class="roles"><li class="role-card sql"><b>MySQL</b><span>제출 원본과 중복 여부의 최종 권위. 유일하게 유실되면 안 되는 상태다.</span></li><li class="role-card redis"><b>Redis</b><span>스코어보드 파생 상태. MySQL 결과에서 언제든 같은 값으로 재구성할 수 있어야 한다.</span></li><li class="role-card mq"><b>RabbitMQ</b><span>작업 전달 수단. 원본을 보관하지 않는다.</span></li></ul>
 <p>아래 두 장의 판단은 전부 이 세 줄에서 나온다.</p>
-<h3 id="측정-전제">측정 전제</h3>
-<p>수치를 싣기 전에 그 수치가 설명하지 않는 것을 먼저 적는다.</p>
-<ul>
-<li>단일 호스트다. Ryzen 5 5600(6코어)의 WSL 예산 12 vCPU 안에서 web·judge·MySQL·RabbitMQ·Redis가
-  상한을 나눠 쓰고, Gatling은 같은 호스트의 코어를 두고 그 VM과 경쟁한다.</li>
-<li>채점이 <code>Thread.sleep</code>이다. judge 노드는 외부 채점 서버를 호출하고 기다리는 구조라 블로킹
-  시간의 대용으로는 타당하지만, 커넥션 풀 한계·타임아웃·부분 실패를 모델링하지 않는다.</li>
-<li>닫힌 부하 모델이다. 가상 사용자가 직전 응답을 기다리므로 서버가 느려지면 부하가 저절로 줄고,
-  실제 장애 때의 재시도 증폭을 재현하지 못한다.</li>
-<li>네트워크 지연이 0이다. 전부 loopback이다.</li>
-</ul>
-<p>따라서 아래 수치는 절대 성능을 말하지 않는다. 구조가 어디서 막히는가의 증거로만 읽어야 한다.</p>
 </section>
 <section class="chapter" id="ch2">
   <p class="chapter-no">CHAPTER 2</p>
@@ -369,10 +348,6 @@ MySQL 파랑 · Redis 빨강 · RabbitMQ 보라 · 애플리케이션 회색. �
 </tr>
 </tbody>
 </table></div>
-<p>아래 수치는 전부 채점 슬롯 32개(judge 노드당 16 × 2), 서비스 시간 기본 50ms에 5%가 2초인
-조건에서 나왔다. 평균 147.5ms다. 성능을 맞추려고 고른 값이 아니라 시나리오 정의이고,
-왜 그 값인지는 <a href="measurements.html">측정 기록</a> §3에 있다. 평균만 보면 어떤 구조든 통과한다.
-5%의 꼬리와 조건 ③이 구조를 갈랐다.</p>
 <figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="100%" role="img" aria-label="채점 구조의 변화: V0에서 현재까지">
   <style>
     .bx    { rx: 7; stroke-width: 1.5; }

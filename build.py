@@ -401,7 +401,7 @@ HERO = f"""<header class="hero">
     </ul>
     <p class="metrics-caveat">단일 호스트에서, 부하 발생기와 서버가 자원을 나눠 쓰는
       조건으로 쟀다. 절대 성능으로 읽으면 안 된다. 구조가 어디서 막히는가의 증거로 읽어야 하고,
-      무엇을 재지 않았는지는 <a href="#측정-전제">측정 전제</a>에 적었다.</p>
+      무엇을 재지 않았는지는 <a href="measurements.html#1-이-수치들이-설명하지-않는-것">측정 기록 §1</a>에 적었다.</p>
 
     <ul class="contact">
       <li><a href="mailto:{EMAIL}"><span class="k">이메일</span> {EMAIL}</a></li>
@@ -424,24 +424,18 @@ STRENGTHS = """<section class="chapter" id="핵심-역량">
     어떤 실험으로 그렇게 말할 수 있는지까지 이어진다.</p>
   <div class="strengths">
     <article class="strength">
-      <h3>정합성을 순서와 중복에 의존하지 않게 설계한다.</h3>
-      <p>채점 완료 순서는 제출 순서와 다르다. 누적 방식 스코어보드는 이것 때문에 대회 중
-        참가자가 본 순위와 최종 순위를 다르게 만들었다. 누적을 버리고 매번 재계산하도록 바꿨다.</p>
+      <h3>장애를 전제로 설계하고, 회복 경로를 직접 죽여서 확인한다.</h3>
+      <p>채점 작업 분배를 DB claim에서 RabbitMQ work queue로 옮기면서 timeout·lease·sweeper를
+        broker에 넘겼다. 노드를 SIGKILL해도 미확인 메시지는 4초 만에 회수됐고 end-to-end max는
+        9.8초였다. 제출 1,000/s를 150초 넣었을 때 127,687건이 전부 채점됐고 유실은 0이다.</p>
+      <a class="ref" href="#ch2">→ 2장 · 대회 제출 파이프라인</a>
+    </article>
+    <article class="strength">
+      <h3>복구를 쉽게 만드는 것은 처리 성능이 아니라 상태의 위치라고 판단한다.</h3>
+      <p>스코어보드 전달을 DB outbox에서 RabbitMQ stream으로 옮긴 이유가 그것이다. 스코어보드와
+        재시작 지점이 같은 스냅샷 안에 있으면 되감긴 offset + 1이 곧 재시작점이라 정할 설정값이
+        없다. Redis를 RDB로 되돌린 뒤 2초대에 수렴했다.</p>
       <a class="ref" href="#ch3">→ 3장 · 스코어보드 전달·복구 경로</a>
-    </article>
-    <article class="strength">
-      <h3>측정 조건을 의심하고, 근거로 쓸 수 있는 수치와 없는 수치를 구분한다.</h3>
-      <p><code>prefetch</code>를 올렸을 때의 꼬리 악화는 포화 상태에서 재면 +25%로 보이고,
-        포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 함께 키워 효과를 희석하기
-        때문이다. 부하 발생기와 서버가 같은 호스트를 나눠 쓰므로 절대 처리량은 용량 수치로
-        쓰지 않고, 모든 비교는 짝실험으로 설계했다.</p>
-      <a class="ref" href="measurements.html#73-같은-변경을-포화-상태에서-재면">→ 측정 기록 §7.3 · 포화 여부에 따른 차이</a>
-    </article>
-    <article class="strength">
-      <h3>내가 틀린 것을 측정으로 찾아낸다.</h3>
-      <p>judge CPU가 72–78%로 관측돼 CPU 한도가 병목이라고 판단했다. 두 런의 CPU 시계열을
-        비교하니 JIT 컴파일이 감쇠하는 곡선이었고, 샘플러의 “피크 CPU”가 그 초반 스파이크를
-        집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
     </article>
     <article class="strength">
       <h3>실행계획까지 내려가서 원인을 가른다.</h3>
