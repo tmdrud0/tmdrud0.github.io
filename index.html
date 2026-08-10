@@ -86,10 +86,7 @@
 <li><a href="#ch2">2. 대회 제출 파이프라인</a>
 <ol class="sub">
 <li><a href="#claim-코드가-사라진-자리에-at-least-once가-남았다" data-ch="ch2">claim 코드가 사라진 자리에 at-least-once가 남았다</a></li>
-<li><a href="#최대-처리량은-하나가-아니다" data-ch="ch2">"최대 처리량"은 하나가 아니다</a></li>
-<li><a href="#prefetch-여유가-있을-때-꼬리가-증폭된다" data-ch="ch2">prefetch: 여유가 있을 때 꼬리가 증폭된다</a></li>
 <li><a href="#백로그는-병목-바로-앞에만-앉는다" data-ch="ch2">백로그는 병목 바로 앞에만 앉는다</a></li>
-<li><a href="#insert-ignore-뒤에-숨는-누락" data-ch="ch2">INSERT IGNORE 뒤에 숨는 누락</a></li>
 </ol>
 </li>
 <li><a href="#ch3">3. 스코어보드 전달·복구 경로</a>
@@ -131,14 +128,14 @@
         포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 함께 키워 효과를 희석하기
         때문이다. 부하 발생기와 서버가 같은 호스트를 나눠 쓰므로 절대 처리량은 용량 수치로
         쓰지 않고, 모든 비교는 짝실험으로 설계했다.</p>
-      <a class="ref" href="#prefetch-여유가-있을-때-꼬리가-증폭된다">→ 2장 · prefetch 짝실험</a>
+      <a class="ref" href="measurements.html#73-같은-변경을-포화-상태에서-재면">→ 측정 기록 §7.3 · 포화 여부에 따른 차이</a>
     </article>
     <article class="strength">
       <h3>내가 틀린 것을 측정으로 찾아낸다.</h3>
       <p>judge CPU가 72–78%로 관측돼 CPU 한도가 병목이라고 판단했다. 두 런의 CPU 시계열을
         비교하니 JIT 컴파일이 감쇠하는 곡선이었고, 샘플러의 “피크 CPU”가 그 초반 스파이크를
         집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
-      <a class="ref" href="#최대-처리량은-하나가-아니다">→ 2장 · “최대 처리량”은 하나가 아니다</a>
+      <a class="ref" href="#백로그는-병목-바로-앞에만-앉는다">→ 2장 · 병목은 채점인데 CPU 때문은 아니다</a>
     </article>
     <article class="strength">
       <h3>실행계획과 락 경로까지 내려가서 원인을 가른다.</h3>
@@ -376,19 +373,10 @@ MySQL 파랑 · Redis 빨강 · RabbitMQ 보라 · 애플리케이션 회색. �
 </tr>
 </tbody>
 </table></div>
-<h4 id="채점-부하-모델">채점 부하 모델</h4>
-<p>이 장의 모든 수치가 딛고 있는 두 가정이다. 성능을 맞추려고 고른 값은 아니고, 시나리오를
-그렇게 정의했다.</p>
-<p>채점 슬롯은 32개다. judge 노드당 리스너 16개에 두 노드. 실제 채점은 사용자 코드를 격리 환경에서
-실행하므로 동시 실행 수가 채점 서버의 코어에 묶인다. 32는 채점 서버가 동시에 32건을 받아준다는
-가정이고, 컨테이너 메모리와 그 가정이 함께 정한 값이다. <code>Thread.sleep</code>은 CPU를 쓰지 않으므로
-슬롯을 늘리면 처리량이 공짜로 올라가지만 실제 채점에서는 그런 일이 일어나지 않는다. 슬롯 수는
-이 모델이 유효한 범위이기도 하다.</p>
-<p>서비스 시간은 기본 50ms이고 5%가 2초다. 평균 147.5ms. 설계 전제(평균 10ms, 1%가 2초)보다
-의도적으로 무겁게 잡았다. 채점이 파이프라인의 상한이 되는 형태를 만들어야, 유입과 채점의 격차를
-durable outbox가 흡수하는 과정을 관찰할 수 있기 때문이다. 가벼운 쪽으로 재면 격차가 줄어
-관찰하려던 현상 자체가 흐려진다.</p>
-<p>평균만 보면 어떤 구조든 통과한다. 5%의 꼬리와 조건 ③이 구조를 갈랐다.</p>
+<p>아래 수치는 전부 채점 슬롯 32개(judge 노드당 16 × 2), 서비스 시간 기본 50ms에 5%가 2초인
+조건에서 나왔다. 평균 147.5ms다. 성능을 맞추려고 고른 값이 아니라 시나리오 정의이고,
+왜 그 값인지는 <a href="measurements.html">측정 기록</a> §3에 있다. 평균만 보면 어떤 구조든 통과한다.
+5%의 꼬리와 조건 ③이 구조를 갈랐다.</p>
 <figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 580" width="100%" role="img" aria-label="채점 구조의 변화: V0에서 현재까지">
   <style>
     .bx    { rx: 7; stroke-width: 1.5; }
@@ -519,6 +507,11 @@ retry·DLQ를 broker가 담당한다. 작업 상태를 쥐는 쪽이 DB에서 br
 <h3 id="claim-코드가-사라진-자리에-at-least-once가-남았다">claim 코드가 사라진 자리에 at-least-once가 남았다</h3>
 <p>claim 상태 관리 코드가 통째로 사라졌다. <code>prefetch</code>로 consumer별 in-flight를 제한하고,
 retry 3회를 소진한 메시지는 DLQ로 보낸다.</p>
+<p>가장 크게 달라진 것은 회복이다. 노드가 죽으면 그 노드가 물고 있던 미확인 메시지를 broker가
+큐로 되돌리므로, 정할 timeout도 돌릴 sweeper도 없다. 재전달됐을 때는 결과 행부터 조회하고
+이미 있으면 채점 API를 호출하지 않고 넘어간다. 그래서 같은 메시지가 두 번 와도 결과는 한 번만
+반영된다. 이 경로가 실제로 도는지는 노드를 SIGKILL해서 확인했고, 미확인 메시지 회수에 4초가
+걸렸다.</p>
 <p>Kafka를 고르지 않은 이유는 격리다. 작업 분배에 필요한 것은 격리였는데, Kafka는
 파티션이 순서 보장 단위이면서 동시에 병렬 단위라 둘을 따로 조절하기 어렵다. <code>prefetch</code>는 1로
 되돌릴 수 있다는 점이 컸다.</p>
@@ -526,57 +519,17 @@ retry 3회를 소진한 메시지는 DLQ로 보낸다.</p>
 outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으므로, outbox가 있다고 broker durability를
 낮출 수도 없다. quorum queue와 persistent message를 그대로 유지해야 한다.
 대신 제출 원본과 <code>contest_judge_outbox</code>를 같은 트랜잭션에 commit해서 중복 여부의 권위는 DB에
-남겼다. 중복 전달은 채점 결과 PK와 <code>INSERT IGNORE</code>, 그리고 결과가 이미 있으면 채점 API를
-호출하지 않고 넘어가는 재전달 경로로 흡수한다.</p>
-<h3 id="최대-처리량은-하나가-아니다">"최대 처리량"은 하나가 아니다</h3>
-<p>제출은 세 단계를 지나고, 각 단계가 앞 단계보다 느려서 경계마다 큐가 하나씩 생긴다.
-단일 숫자로 최대 처리량을 말하면 어느 쪽이든 오해가 된다.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>단계</th>
-<th>하는 일</th>
-<th style="text-align: right;">상한</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>유입</td>
-<td>HTTP 접수 → 중복 해시 → bulk INSERT commit</td>
-<td style="text-align: right;"><strong>1,014 /s</strong></td>
-</tr>
-<tr>
-<td>relay</td>
-<td>judge outbox claim → RabbitMQ 발행</td>
-<td style="text-align: right;"><strong>640 /s</strong></td>
-</tr>
-<tr>
-<td>채점</td>
-<td>슬롯 32개 → 결과 commit → ACK</td>
-<td style="text-align: right;"><strong>150 /s</strong></td>
-</tr>
-</tbody>
-</table></div>
-<p>유입이 채점의 <strong>6.8배</strong>다. 이 격차를 durable outbox가 흡수하는 것이 설계 의도였고 실제로 그랬다.
-접수는 commit 이후에만 <code>202</code>를 반환하므로 "접수했다고 답한 뒤 잃는" 경로는 없다.
-쓰기 경로는 오히려 부하에서 효율이 올라간다. 밀리기 시작하면 배치가 뭉쳐 건당 비용이 떨어진다.
-저부하 수치로 선형 외삽하면 이 자기조절을 놓친다.</p>
-<p>병목은 채점이다. 다만 CPU 때문은 아니다. 처음에는 judge CPU가 72–78%로 관측돼 CPU 한도가
-처리량을 깎는다고 판단했다. 컨테이너를 recreate한 런과 웜 상태 런의 CPU 시계열을 비교하니 100초에
-걸쳐 7%로 감쇠하는 JIT 컴파일 곡선이었고, 샘플러의 "피크 CPU"가 그 초반 스파이크를 집고 있었다.
-웜 상태 정상 CPU는 7–9%다. 슬롯이 대기에 묶여 있어서 CPU가 남는다. 더 받을 수 있다는 뜻은 아니다.</p>
-<h3 id="prefetch-여유가-있을-때-꼬리가-증폭된다"><code>prefetch</code>: 여유가 있을 때 꼬리가 증폭된다</h3>
-<p><code>prefetch</code>를 1 / 4 / 64로 바꿔 짝실험했다. 도착률·서비스 분포·consumer 수는 고정하고 디스패치
-정책만 바꿨다. <code>prefetch=4</code>에서 p99가 67% 나빠지는데 p50과 p95는 거의 그대로다. 대시보드에서
-흔히 보는 두 지표가 멀쩡하니 공짜처럼 보인다. broker가 스레드의 한가함을 보지 않고 로컬 버퍼에
-빈자리가 남았는지를 보고 배정하기 때문인데, 그러면 일감을 놀리지 않던 큐 하나가 head-of-line
-blocking을 가진 32개의 독립 FIFO로 쪼개진다. 그래서 <code>prefetch=1</code>로 두었다.</p>
-<blockquote>
-<p>측정 조건이 결론을 바꿨다. 같은 변경을 포화 상태(도착 &gt; 용량)에서 재면 p99 악화가 +25%로
-보이고, 포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 동시에 키워 효과를
-희석하기 때문이다. 지연 분포와 런별 조건은 <a href="measurements.html">측정 기록</a> §7에 있다.</p>
-</blockquote>
+남겼다.</p>
+<p>제출 저장은 chunk 단위 bulk INSERT이고, 중복 한 건이 chunk 전체를 rollback시키지 않도록
+<code>INSERT IGNORE</code>를 쓴다. 문제는 이것이 unique 충돌만 무시하지 않는다는 것이다. FK 위반처럼 행이
+경고와 함께 조용히 사라지는 경우도 삼키고, Connector/J가 batch를 multi-values로 rewrite하면
+update count가 <code>SUCCESS_NO_INFO(-2)</code>로 와서 어느 행이 무시됐는지 드라이버가 알려주지 않는다.
+그래서 INSERT 직후 같은 트랜잭션에서 예약 ID와 dedup key를 다시 조회해 분류하고, 설명되지 않는
+누락은 정합성 예외로 rollback시킨다. 불량 건만 실패시킨 뒤 나머지는 예약해 둔 같은 ID로 한 번 더
+insert하므로, chunk당 DB 시도는 최대 2회다.</p>
 <h3 id="백로그는-병목-바로-앞에만-앉는다">백로그는 병목 바로 앞에만 앉는다</h3>
+<p>제출은 세 단계를 지나고 각 단계의 상한이 다르다. 유입 1,014/s, relay 640/s, 채점 150/s로
+<strong>유입이 채점의 6.8배</strong>다. 이 격차를 durable outbox가 흡수하는 것이 설계 의도였다.</p>
 <p>제출 1,000/s를 150초 넣었다. HTTP 133,935건 중 132,510건을 접수했고(거절 1,425건, 1.06%),
 중복을 걷어낸 <strong>127,687건</strong>이 전부 채점됐다. 제출 행과 결과 행이 일치한다.</p>
 <div class="table-wrap"><table>
@@ -620,9 +573,7 @@ blocking을 가진 32개의 독립 FIFO로 쪼개진다. 그래서 <code>prefetc
 </tr>
 </tbody>
 </table></div>
-<p>각 값은 그 버퍼의 개별 피크이고 같은 시점의 값이 아니다. judge outbox는 유입(1,014)과
-relay(640)의 차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는다. RabbitMQ는 relay(640)와
-채점(150)의 격차가 4배라 나머지 9분을 여기서 쓴다. 총 적체 해소(drain) <strong>10.4분, 유실 0</strong>.</p>
+<p>각 값은 그 버퍼의 개별 피크이고 같은 시점의 값이 아니다. judge outbox는 유입과 relay의</p>
 <figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
 <style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
 <rect width="840" height="340" fill="#ffffff"/>
@@ -663,9 +614,12 @@ relay(640)의 차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는�
 <line x1="622" y1="92" x2="646" y2="92" stroke="#dc2626" stroke-width="2.5" stroke-dasharray="5 3"/>
 <text x="652" y="96" class="t">scoreboard 반영 대기</text>
 </svg></div><figcaption>단계별 적체와 배수. 부하는 150초에 끝나는데 RabbitMQ ready 는 209초까지 계속 올라 94,211이 된다. 백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다. 20260808-104446/pipeline.csv.</figcaption></figure>
-<p>하류 큐가 얕은 것은 건강 신호가 아니다. scoreboard 반영 대기는 모든 런에서 50–70을 유지했는데,
-채점이 끝나야 행이 생기므로 상류가 막히면 유입 자체가 제한되기 때문이다. 조건이 나쁜 런에서
-오히려 더 얕아졌다. 얕은 큐를 보면 상류부터 확인해야 한다.</p>
+<p>차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는다. RabbitMQ는 relay와 채점의 격차가 4배라
+나머지 9분을 여기서 쓴다. 총 적체 해소(drain) <strong>10.4분, 유실 0</strong>.</p>
+<p>병목은 채점이다. 다만 CPU 때문은 아니다. 처음에는 judge CPU가 72–78%로 관측돼 CPU 한도가
+처리량을 깎는다고 판단했는데, 두 런의 CPU 시계열을 비교하니 100초에 걸쳐 7%로 감쇠하는 JIT
+컴파일 곡선이었고 샘플러의 "피크 CPU"가 그 초반 스파이크를 집고 있었다. 웜 상태 정상 CPU는
+7–9%다. 슬롯이 대기에 묶여 있어서 CPU가 남는다.</p>
 <figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 490" width="100%" role="img" aria-label="과부하가 쌓이는 위치와 영속성 경계">
   <style>
     .bx    { rx: 7; stroke-width: 1.5; }
@@ -835,160 +789,9 @@ relay(640)의 차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는�
 <text x="652" y="96" class="t">ready — SIGKILL</text>
 </svg></div><figcaption>노드 사망과 회수. prefetch=1 이라 unacked 수가 곧 일하는 consumer 수이고, 32 → 16 → 32 가 노드의 생사를 그대로 보여준다. 주황 음영이 죽어 있던 구간. 20260808-115115(주입) vs -114654(무주입 짝).</figcaption></figure>
 <p>꼬리가 나빠진 것은 재전달 지연 때문이 아니다. 죽어 있는 동안 슬롯이 16개로 줄어 처리율이
-절반(약 75/s)이 되고 <code>ready</code>가 655까지 쌓인다. 그 대기는 <code>655 ÷ 150 = 4.4초</code>(회복된 용량)와
-<code>655 ÷ 75 = 8.7초</code>(반토막 용량) 사이에 있는데, 실측 max 9.77초에서 채점 꼬리 2초를 빼면 7.8초로
-상한 쪽에 붙는다. 구간의 대부분을 반토막 용량이 지배했고, 그래서 산수가 닫힌다.
-악화분은 전부 능력이 없던 시간이다. 복구 영향을 줄이려면 JVM 기동 시간이나 노드 수를 손대야 한다.</p>
-<h3 id="insert-ignore-뒤에-숨는-누락"><code>INSERT IGNORE</code> 뒤에 숨는 누락</h3>
-<p>여기까지가 구간별 거동이고, 마지막으로 유입 1,014/s를 지탱하는 저장 경로 안쪽을 본다.
-그 처리량은 chunk 단위 bulk INSERT에서 나오는데, chunk 안에서 한 건이 실패하면 문제가 생긴다.</p>
-<p>중복 한 건이 chunk 전체를 rollback시키는 것을 막으려고 제출 저장을 <code>INSERT IGNORE</code>로 바꿨다.
-그런데 이것은 unique 충돌만 무시하지 않는다. FK 위반처럼 행 전체가 경고와 함께 조용히 사라지는
-경우도 삼킨다. 게다가 Connector/J가 batch를 multi-values로 rewrite하면 update count가
-<code>SUCCESS_NO_INFO(-2)</code>로 와서, 어떤 행이 삽입되고 어떤 행이 무시됐는지 드라이버가 알려주지 않는다.
-그래서 INSERT 직후 같은 트랜잭션에서 예약 ID와 dedup key를 다시 조회해 분류한다.</p>
-<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" width="100%" role="img" aria-label="INSERT IGNORE 사후 판별과 불량 요청 격리">
-  <style>
-    .bx   { rx: 7; stroke-width: 1.5; }
-    .app  { fill: #f1f5f9; stroke: #64748b; }
-    .sql  { fill: #eff6ff; stroke: #2563eb; }
-    .warn { fill: #fff7ed; stroke: #ea580c; }
-    .ok   { fill: #f0fdfa; stroke: #0f766e; }
-    .t    { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
-    .mono { font-family: Consolas,'Courier New',monospace; font-size: 11.5px; fill: #1e3a8a; }
-    .ttl  { font-size: 12.5px; font-weight: 700; }
-    .sub  { font-size: 10.5px; fill: #475569; }
-    .cap  { font-size: 11px; font-weight: 700; fill: #64748b; letter-spacing: .05em; }
-    .chip { font-size: 11.5px; font-weight: 700; fill: #ffffff; }
-    .bad  { font-size: 11px; fill: #c2410c; }
-    .ln   { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
-  </style>
-  <defs>
-    <marker id="a3" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
-      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
-    </marker>
-  </defs>
-
-  <rect width="900" height="640" fill="#ffffff"/>
-
-  <!-- 1단계 : batch insert -->
-  <text x="30" y="28" class="t cap">① 저장 시도</text>
-
-  <rect x="30" y="40" width="150" height="48" class="bx app"/>
-  <text x="105" y="61" class="t ttl" text-anchor="middle">chunk 최대 100건</text>
-  <text x="105" y="77" class="t sub" text-anchor="middle">JVM 내 중복 병합 후</text>
-
-  <rect x="216" y="40" width="342" height="48" class="bx sql"/>
-  <text x="230" y="60" class="mono">INSERT IGNORE INTO contest_submission</text>
-  <text x="230" y="78" class="mono">VALUES (…), (…), (…);</text>
-
-  <rect x="594" y="40" width="276" height="48" class="bx warn"/>
-  <text x="608" y="60" class="t ttl" fill="#9a3412">update count = −2</text>
-  <text x="608" y="78" class="t sub">SUCCESS_NO_INFO — 판별 불가</text>
-
-  <line x1="180" y1="64" x2="210" y2="64" class="ln" marker-end="url(#a3)"/>
-  <line x1="558" y1="64" x2="588" y2="64" class="ln" marker-end="url(#a3)"/>
-
-  <text x="30" y="112" class="t bad">✕ INSERT IGNORE는 unique 충돌뿐 아니라 FK 위반 같은 오류도 조용히 무시한다 — 무엇이 무시됐는지 드라이버가 알려주지 않는다</text>
-
-  <!-- 2단계 : 사후 조회 -->
-  <text x="30" y="152" class="t cap">② 같은 트랜잭션에서 사후 조회</text>
-
-  <rect x="216" y="164" width="342" height="42" class="bx sql"/>
-  <text x="387" y="190" class="t ttl" text-anchor="middle">예약 ID · dedup key 재조회</text>
-  <line x1="387" y1="206" x2="387" y2="228" class="ln" marker-end="url(#a3)"/>
-
-  <!-- 3단계 : 4분기 -->
-  <text x="30" y="252" class="t cap">③ 결과 분류</text>
-
-  <!-- row 1 -->
-  <rect x="30" y="264" width="330" height="40" class="bx ok"/>
-  <text x="44" y="289" class="t sub">예약 ID에 요청과 같은 key의 row 존재</text>
-  <rect x="392" y="266" width="118" height="36" rx="6" fill="#0f766e"/>
-  <text x="451" y="289" class="t chip" text-anchor="middle">새 삽입</text>
-  <text x="536" y="289" class="t sub">예약 ID 반환 · judge outbox 생성</text>
-  <line x1="360" y1="284" x2="386" y2="284" class="ln" marker-end="url(#a3)"/>
-
-  <!-- row 2 -->
-  <rect x="30" y="314" width="330" height="40" class="bx sql"/>
-  <text x="44" y="339" class="t sub">예약 ID 없음 + 같은 dedup key row 존재</text>
-  <rect x="392" y="316" width="118" height="36" rx="6" fill="#2563eb"/>
-  <text x="451" y="339" class="t chip" text-anchor="middle">정상 중복</text>
-  <text x="536" y="339" class="t sub">기존 submission ID 반환 · outbox 없음</text>
-  <line x1="360" y1="334" x2="386" y2="334" class="ln" marker-end="url(#a3)"/>
-
-  <!-- row 3 -->
-  <rect x="30" y="364" width="330" height="40" class="bx warn"/>
-  <text x="44" y="389" class="t sub">예약 ID · dedup key 둘 다 없음 (FK 위반 등)</text>
-  <rect x="392" y="366" width="118" height="36" rx="6" fill="#ea580c"/>
-  <text x="451" y="389" class="t chip" text-anchor="middle">설명 불가 누락</text>
-  <text x="536" y="389" class="t sub">정합성 예외 → 트랜잭션 rollback</text>
-  <line x1="360" y1="384" x2="386" y2="384" class="ln" marker-end="url(#a3)"/>
-
-  <!-- row 4 -->
-  <rect x="30" y="414" width="330" height="40" class="bx warn"/>
-  <text x="44" y="439" class="t sub">예약 ID가 다른 key의 row를 가리킴</text>
-  <rect x="392" y="416" width="118" height="36" rx="6" fill="#b91c1c"/>
-  <text x="451" y="439" class="t chip" text-anchor="middle">ID 충돌</text>
-  <text x="536" y="439" class="t sub">fail-fast → 트랜잭션 rollback</text>
-  <line x1="360" y1="434" x2="386" y2="434" class="ln" marker-end="url(#a3)"/>
-
-  <!-- 4단계 : 불량 격리 -->
-  <polyline points="451,454 451,478 362,478 362,496" class="ln" marker-end="url(#a3)"/>
-  <polyline points="451,454 451,478 660,478 660,496" class="ln" marker-end="url(#a3)"/>
-
-  <text x="30" y="492" class="t cap">④ rollback된 chunk를 두 집합으로 나눠 재처리</text>
-
-  <rect x="72" y="502" width="336" height="70" class="bx warn"/>
-  <text x="240" y="524" class="t ttl" text-anchor="middle" fill="#9a3412">offenders</text>
-  <text x="240" y="542" class="t sub" text-anchor="middle">예외가 지목한 요청 + 같은 dedup key 공유</text>
-  <text x="240" y="560" class="t sub" text-anchor="middle">→ 이 Future만 실패시킨다</text>
-
-  <rect x="492" y="502" width="336" height="70" class="bx ok"/>
-  <text x="660" y="524" class="t ttl" text-anchor="middle" fill="#115e59">survivors</text>
-  <text x="660" y="542" class="t sub" text-anchor="middle">함께 rollback됐을 뿐 정상인 요청</text>
-  <text x="660" y="560" class="t sub" text-anchor="middle">→ 동일 예약 ID로 한 번만 재실행</text>
-
-  <text x="72" y="600" class="t sub">첫 시도가 rollback으로 완전히 취소됐고 요청별 예약 ID가 고정되어 있으므로 재실행이 안전하다.</text>
-  <text x="72" y="620" class="t ttl" fill="#0f766e">재실행에서는 다시 격리하지 않는다 → chunk당 DB 시도 횟수 최대 2회</text>
-</svg></div><figcaption>INSERT IGNORE 판별</figcaption></figure>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th>조회 결과</th>
-<th>판정</th>
-<th>처리</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>예약 ID에 같은 key의 행 존재</td>
-<td>새 삽입</td>
-<td>예약 ID 반환, judge outbox 생성</td>
-</tr>
-<tr>
-<td>예약 ID 없음 + 같은 dedup key 행 존재</td>
-<td>정상 중복</td>
-<td>기존 submission ID 반환</td>
-</tr>
-<tr>
-<td>둘 다 없음</td>
-<td>설명 불가 누락</td>
-<td>정합성 예외 → rollback</td>
-</tr>
-<tr>
-<td>예약 ID가 다른 key의 행을 가리킴</td>
-<td>ID 충돌</td>
-<td>fail-fast → rollback</td>
-</tr>
-</tbody>
-</table></div>
-<p>여기서 끝내면 불량 한 건이 여전히 정상 99건을 죽인다. 정합성 예외에 문제가 된 예약 ID를 담고
-chunk를 둘로 나눠, <strong>offenders</strong>의 Future만 실패시키고 <strong>survivors</strong>는 이미 예약해 둔 같은 ID로
-다시 insert한다. 첫 시도가 rollback으로 완전히 취소됐고 ID가 고정되어 있으므로 재실행이 안전하고,
-chunk당 DB 시도는 최대 2회다.</p>
-<p>이 판별 덕분에 MySQL이 중복의 유일한 권위가 됐고, 앞단에 두던 Redis 중복 캐시를 임계 경로에서
-지울 수 있었다.</p>
+절반이 되고 <code>ready</code>가 655까지 쌓인 것이다. 악화분은 전부 능력이 없던 시간이다. 그 대기가
+반토막 용량으로 설명된다는 산수는 <a href="measurements.html">측정 기록</a> §6에 있다. 복구 영향을 줄이려면
+JVM 기동 시간이나 노드 수를 손대야 한다.</p>
 </section>
 <section class="chapter" id="ch3">
   <p class="chapter-no">CHAPTER 3</p>
