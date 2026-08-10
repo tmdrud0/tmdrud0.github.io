@@ -44,14 +44,14 @@ CHART_INSERTS = [
         "| 64 | 1.297s |",
         "after",
         "![prefetch 별 consumer 로컬 버퍼. 상한은 16배 차이인데 실제로 찬 양은"
-        " 326건 — 상한이 아니라 얼마나 찼는지가 꼬리를 정한다."
+        " 326건이다. 꼬리를 정하는 것은 실제로 찬 양이다."
         " `20260808-092647` / `-094634` / `-093145`.](diagrams/chart-prefetch.svg)",
     ),
     (
         "채점(150)의 격차가 4배라",
         "after",
         "![단계별 적체와 배수. 부하는 150초에 끝나는데 RabbitMQ ready 는 209초까지"
-        " 계속 올라 94,211이 된다 — 백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다."
+        " 계속 올라 94,211이 된다. 백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다."
         " `20260808-104446/pipeline.csv`.](diagrams/chart-backlog.svg)",
     ),
     (
@@ -385,16 +385,16 @@ HERO = f"""<header class="hero">
     <p class="hero-lede">대회 중 제출이 몰릴 때 데이터가 유실되거나 실시간 순위가 최종 순위와
       어긋나는 문제를 주제로 삼았다. 메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서
       피할 수 없으므로 그것을 전제로 설계했다.</p>
-    <p class="hero-lede"><b>Java 17 · Spring Boot 3.4 · MySQL · Redis · RabbitMQ로 온라인 저지
-      API 서버를 혼자 만들었다</b> (2025.09 ~, 11개월). 요구사항은
+    <p class="hero-lede">Java 17 · Spring Boot 3.4 · MySQL · Redis · RabbitMQ로 온라인 저지
+      API 서버를 혼자 만들었다 (2025.09 ~, 11개월). 요구사항은
       <a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">Codeforces</a>
-      <b>Candidate Master</b>로 대회를 뛰며 겪은 것들에서 나왔다.</p>
+      Candidate Master로 대회를 뛰며 겪은 것들에서 나왔다.</p>
 
     <ul class="metrics">
       <li class="metric">
         <span class="cond">제출 1,000/s × 150초</span>
         <span class="fig">127,687건 <small>전량 채점</small></span>
-        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 적체 해소 10.4분</span>
+        <span class="note">접수 132,510건 · 중복 제외 · 유실 0 · 적체 해소 10.4분</span>
       </li>
       <li class="metric">
         <span class="cond">judge 노드 1대 SIGKILL</span>
@@ -413,7 +413,7 @@ HERO = f"""<header class="hero">
       </li>
     </ul>
     <p class="metrics-caveat">단일 호스트에서, 부하 발생기와 서버가 자원을 나눠 쓰는
-      조건으로 쟀다. <b>절대 성능이 아니라 구조가 어디서 막히는가의 증거</b>로 읽어야 한다 —
+      조건으로 쟀다. 절대 성능으로 읽으면 안 된다. 구조가 어디서 막히는가의 증거로 읽어야 하고,
       무엇을 재지 않았는지는 <a href="#측정-전제">측정 전제</a>에 적었다.</p>
 
     <ul class="contact">
@@ -434,7 +434,7 @@ STRENGTHS = """<section class="chapter" id="핵심-역량">
   <p class="chapter-no">STRENGTHS</p>
   <h2>핵심 역량</h2>
   <p class="chapter-lede">스스로 확인한 것만 적는다. 각 항목은 아래 본문에서
-    <strong>어떤 실험으로 그렇게 말할 수 있는지</strong>까지 이어진다.</p>
+    어떤 실험으로 그렇게 말할 수 있는지까지 이어진다.</p>
   <div class="strengths">
     <article class="strength">
       <h3>정합성을 순서와 중복에 의존하지 않게 설계한다.</h3>
@@ -460,8 +460,8 @@ STRENGTHS = """<section class="chapter" id="핵심-역량">
     <article class="strength">
       <h3>실행계획과 락 경로까지 내려가서 원인을 가른다.</h3>
       <p>깊은 페이지 랭킹 조회가 233초까지 갔다. 집계 테이블과 스냅숏으로 뒤쪽 페이지를
-        0.113ms까지 줄였지만 solved 랭킹은 아직 47.7초다 — <strong>병목이 사라진 게 아니라
-        tie group 안으로 옮겨간 것</strong>이고 실행계획이 그걸 보여준다. 데드락 세 건도
+        0.113ms까지 줄였지만 solved 랭킹은 아직 47.7초다. 병목이 tie group 안으로 옮겨간
+        것이고, 실행계획이 그걸 보여준다. 데드락 세 건도
         격리 수준·잠금 진입점·인덱스로 원인 층이 매번 달랐다.</p>
       <a class="ref" href="#ch4">→ 4장 · 랭킹 조회와 데드락</a>
     </article>
@@ -473,7 +473,7 @@ LINKS = f"""<section class="chapter" id="보조-자료">
   <p class="chapter-no">APPENDIX</p>
   <h2>보조 자료</h2>
   <p class="chapter-lede">본문은 주장이고, 근거 문서는 그 주장의 출처다.
-    <strong>본문에 실린 모든 수치는 런 이름과 함께 추적된다.</strong></p>
+    본문에 실린 모든 수치는 런 이름과 함께 추적된다.</p>
   <div class="links">
     <a class="link-card" href="measurements.html">
       <b>부하 · 회복 측정 기록</b>
@@ -506,19 +506,19 @@ FOOT = f"""<footer class="site-foot">
 
 # 장마다 훑는 사람이 결론부터 읽도록 머리 요약을 단다.
 CHAPTER_LEDES = {
-    1: "제출 · 채점 · 순위를 돌려주는 API 서버. 다루는 범위는 <strong>대회 제출 경로</strong>다. "
-    "<strong>MySQL은 원본, Redis는 파생, RabbitMQ는 전달</strong> — 저장소마다 역할을 하나씩만 "
-    "준 것이 이후 두 장의 판단 기준 전부다.",
-    2: "채점 작업 분배를 <strong>DB claim에서 RabbitMQ work queue로</strong> 옮겼다. "
-    "제출 1,000/s를 150초 넣어 <strong>127,687건 전량 채점 · 유실 0</strong>을 확인하고, "
-    "<code>prefetch</code>가 대시보드에 안 보이는 곳에서 꼬리를 어떻게 키우는지를 짝실험으로 갈랐다.",
-    3: "스코어보드 전달을 <strong>DB outbox에서 RabbitMQ stream으로</strong> 옮겼다. "
-    "이유는 처리 성능이 아니라 <strong>checkpoint의 위치</strong>다 — Redis를 스냅샷으로 되돌렸을 때 "
+    1: "제출 · 채점 · 순위를 돌려주는 API 서버. 다루는 범위는 대회 제출 경로다. "
+    "MySQL은 원본, Redis는 파생, RabbitMQ는 전달. 저장소마다 역할을 하나씩만 준 것이 "
+    "이후 두 장의 판단 기준이 된다.",
+    2: "채점 작업 분배를 DB claim에서 RabbitMQ work queue로 옮겼다. "
+    "제출 1,000/s를 150초 넣어 127,687건 전량 채점, 유실 0을 확인했다. "
+    "<code>prefetch</code>가 대시보드에 안 보이는 곳에서 꼬리를 어떻게 키우는지도 짝실험으로 갈랐다.",
+    3: "스코어보드 전달을 DB outbox에서 RabbitMQ stream으로 옮겼다. "
+    "이유는 처리 성능이 아니라 checkpoint의 위치다. Redis를 스냅샷으로 되돌렸을 때 "
     "되감긴 offset + 1이 곧 재시작점이 된다.",
-    4: "쓰기가 아니라 <strong>읽기 경로와 잠금</strong>에서 부딪힌 것. 깊은 페이지 랭킹 조회가 "
-    "233초까지 갔고, 집계 테이블과 스냅숏으로 <strong>0.113ms</strong>까지 줄였다. "
-    "데드락 세 건은 <strong>격리 수준 · 잠금 진입점 · 인덱스</strong>로 원인 층이 매번 달랐다.",
-    5: "<strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, "
+    4: "읽기 경로와 잠금에서 부딪힌 것. 깊은 페이지 랭킹 조회가 233초까지 갔고, "
+    "집계 테이블과 스냅숏으로 0.113ms까지 줄였다. "
+    "데드락 세 건은 격리 수준 · 잠금 진입점 · 인덱스로 원인 층이 매번 달랐다.",
+    5: "검증하지 않은 것을 먼저 적는다. 채점이 <code>Thread.sleep</code>이라는 것, "
     "재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, "
     "대회·일반 제출이 같은 큐를 쓴다는 것, 그리고 데드락에 회귀 테스트가 없다는 것.",
 }
