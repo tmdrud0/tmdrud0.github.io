@@ -1041,7 +1041,11 @@ figure.diagram .fig-scroll {
 
   h2,
   h3,
-  h4 {
+  h4,
+  /* 장 머리는 CHAPTER N · 제목 · 기간 · 요약이 한 덩어리다. 페이지 나눔을 없앤 뒤로
+     이 덩어리가 페이지 경계에 걸릴 수 있어 뒤 블록과 붙여 둔다. */
+  .chapter-no,
+  .chapter-meta {
     break-after: avoid;
     page-break-after: avoid;
   }
