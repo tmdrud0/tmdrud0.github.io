@@ -980,15 +980,12 @@ figure.diagram .fig-scroll {
     padding: 0;
   }
 
+  /* 장마다 새 종이에서 시작하면 장 끝의 빈 자리가 그대로 버려진다.
+     19페이지 중 3페이지가 그것이었다. 제목이 페이지 맨 아래 홀로 남는 것은
+     아래 `h2, h3, h4 { break-after: avoid }` 가 막는다. */
   .chapter {
     padding-top: 0;
-    break-before: page;
-    page-break-before: always;
-  }
-
-  .chapter:first-of-type {
-    break-before: auto;
-    page-break-before: auto;
+    margin-top: 18px;
   }
 
   figure.diagram {
