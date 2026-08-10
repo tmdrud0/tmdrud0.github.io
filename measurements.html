@@ -75,7 +75,7 @@
 <li><strong>네트워크 지연이 0이다.</strong> 전부 loopback이다.</li>
 <li><strong><code>submit-*</code> 시나리오에는 조회 부하가 없다.</strong> 유입 상한과 백로그 수치는 제출만 들어오는 조건에서
   나온 값이다. 실제 대회에서는 참가자가 순위를 계속 새로고침하므로 조회가 제출보다 많다.
-  제출과 조회가 겹치는 조건은 <code>mixed-target</code>으로 따로 쟀고 §7.1에 있다.</li>
+  제출과 조회가 겹치는 조건은 <code>mixed-target</code>으로 따로 쟀고 §7.3에 있다.</li>
 </ul>
 <p>따라서 모든 비교는 <strong>같은 환경에서 한 변수만 바꿔 짝지어 재는 짝실험</strong>으로 설계했고, 방향을
 뒤집어 재현해 워밍업 교란을 배제했다.
@@ -573,8 +573,57 @@ JVM 기동 시간이나 노드 수를 손대야 한다.</p>
 <blockquote>
 <p><code>var/loadtest-20260808-092647</code> / <code>-094634</code> / <code>-093145</code></p>
 </blockquote>
-<p>도착률·서비스 분포·consumer 수를 고정하고 디스패치 정책만 바꿨다. 세 런 모두 <code>ready</code>가 109를
-넘지 않아 <strong>포화가 아닌 상태</strong>에서 잰 값이다.</p>
+<p>도착률·서비스 분포·consumer 수를 고정하고 디스패치 정책만 바꿨다. 부하는 HTTP 139/s이고,
+중복 제출을 걷어내면 채점단에 도착하는 것은 123/s다. 세 런 모두 <code>ready</code>가 109를 넘지 않아
+<strong>포화가 아닌 상태</strong>에서 잰 값이고, 이 조건이 본문 결론의 전제다.</p>
+<h3 id="71-지연-분포">7.1 지연 분포</h3>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th style="text-align: right;"><code>prefetch</code></th>
+<th style="text-align: right;">p50</th>
+<th style="text-align: right;">p95</th>
+<th style="text-align: right;">p99</th>
+<th style="text-align: right;">max</th>
+<th style="text-align: right;">consumer당 대기</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">0.322s</td>
+<td style="text-align: right;">2.119s</td>
+<td style="text-align: right;"><strong>2.376s</strong></td>
+<td style="text-align: right;">2.844s</td>
+<td style="text-align: right;">0</td>
+</tr>
+<tr>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">0.312s</td>
+<td style="text-align: right;">2.258s</td>
+<td style="text-align: right;"><strong>3.975s</strong></td>
+<td style="text-align: right;">6.101s</td>
+<td style="text-align: right;">1.18</td>
+</tr>
+<tr>
+<td style="text-align: right;">64</td>
+<td style="text-align: right;">1.297s</td>
+<td style="text-align: right;">6.433s</td>
+<td style="text-align: right;"><strong>10.308s</strong></td>
+<td style="text-align: right;">16.706s</td>
+<td style="text-align: right;">6.37</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>p50과 p95는 거의 움직이지 않는데 p99만 나빠진다.</strong> <code>prefetch=4</code>에서 p99가 67% 악화되는 동안
+p50은 오히려 미세하게 낮다. 대시보드가 흔히 띄우는 두 지표로는 이 손해가 보이지 않는다.</p>
+<p>대기 0에서의 2.376초는 대기가 아니라 서비스 시간 꼬리 그 자체다. <code>prefetch</code>가 키우는 것은
+그 위에 얹히는 대기다.</p>
+<h3 id="72-왜-커지는가-로컬-버퍼가-큐를-쪼갠다">7.2 왜 커지는가 — 로컬 버퍼가 큐를 쪼갠다</h3>
+<p>broker는 스레드가 한가한지를 보지 않는다. 이 consumer에게 밀어넣을 자리가 남았는지를 본다.
+<code>prefetch=1</code>일 때만 이 둘이 같은 말이 된다. 그보다 크면 배정에 가용성 정보가 실리지 않고,
+한번 로컬 버퍼에 들어간 메시지는 옆 consumer가 놀고 있어도 회수되지 않는다. 일감을 놀리지 않던
+큐 하나가 head-of-line blocking을 가진 32개의 독립 FIFO로 쪼개진다.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -611,11 +660,9 @@ JVM 기동 시간이나 노드 수를 손대야 한다.</p>
 </table></div>
 <p><strong>상한이 16배 차이인데 p99는 2.6배다.</strong> <code>prefetch=64</code>에서도 버퍼는 상한의 일부만 찬다 —
 <strong>상한이 아니라 실제로 얼마나 찼는지가 손해를 정한다.</strong></p>
-<p><code>prefetch=1</code>에서의 2.376초는 대기가 아니라 서비스 시간 꼬리 그 자체다. <code>prefetch</code>가 키우는 것은
-그 위에 얹히는 대기다.</p>
 <p>순서를 뒤집어 재현했을 때 p99가 <code>2.372 → 2.376s</code>, <code>10.458 → 10.308s</code>로 일치해 워밍업 교란도
 배제했다. 위 표의 값은 전부 <code>end-to-end-staleness.csv</code>의 <code>result-queryable</code>이다.</p>
-<h3 id="71-같은-변경을-포화-상태에서-재면">7.1 같은 변경을 포화 상태에서 재면</h3>
+<h3 id="73-같은-변경을-포화-상태에서-재면">7.3 같은 변경을 포화 상태에서 재면</h3>
 <p>제출과 조회가 겹치고(<code>mixed-target</code>: 제출 139→200 + 조회 300) 도착이 용량을 넘는 조건에서
 같은 비교를 했다. <strong>여기서는 같은 변경이 훨씬 작아 보인다.</strong></p>
 <div class="table-wrap"><table>

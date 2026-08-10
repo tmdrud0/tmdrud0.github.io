@@ -566,96 +566,15 @@ outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으�
 걸쳐 7%로 감쇠하는 JIT 컴파일 곡선이었고, 샘플러의 "피크 CPU"가 그 초반 스파이크를 집고 있었다.
 웜 상태 정상 CPU는 7–9%다. 슬롯이 대기에 묶여 있어서 CPU가 남는다. 더 받을 수 있다는 뜻은 아니다.</p>
 <h3 id="prefetch-여유가-있을-때-꼬리가-증폭된다"><code>prefetch</code>: 여유가 있을 때 꼬리가 증폭된다</h3>
-<p><code>prefetch</code>를 1 / 4 / 64로 바꿔 짝실험했다. 도착률·서비스 분포·consumer 수는 전부 고정하고
-디스패치 정책만 바꿨다. 부하는 HTTP 139/s이고, 중복 제출을 걷어내면 채점단에 도착하는 것은 123/s다.
-세 런 모두 <code>ready</code>가 최대 109건을 넘지 않았다. 포화가 아닌 상태에서 잰 값이고, 이 조건이 아래
-결론의 전제다.</p>
-<div class="table-wrap"><table>
-<thead>
-<tr>
-<th style="text-align: right;">prefetch</th>
-<th style="text-align: right;">p50</th>
-<th style="text-align: right;">p95</th>
-<th style="text-align: right;">p99</th>
-<th style="text-align: right;">max</th>
-<th style="text-align: right;">consumer당 대기</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td style="text-align: right;">1</td>
-<td style="text-align: right;">0.322s</td>
-<td style="text-align: right;">2.119s</td>
-<td style="text-align: right;"><strong>2.376s</strong></td>
-<td style="text-align: right;">2.844s</td>
-<td style="text-align: right;">0</td>
-</tr>
-<tr>
-<td style="text-align: right;">4</td>
-<td style="text-align: right;">0.312s</td>
-<td style="text-align: right;">2.258s</td>
-<td style="text-align: right;"><strong>3.975s</strong></td>
-<td style="text-align: right;">6.101s</td>
-<td style="text-align: right;">1.18</td>
-</tr>
-<tr>
-<td style="text-align: right;">64</td>
-<td style="text-align: right;">1.297s</td>
-<td style="text-align: right;">6.433s</td>
-<td style="text-align: right;"><strong>10.308s</strong></td>
-<td style="text-align: right;">16.706s</td>
-<td style="text-align: right;">6.37</td>
-</tr>
-</tbody>
-</table></div>
-<figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
-<style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
-<rect width="840" height="340" fill="#ffffff"/>
-<text x="74" y="22" class="ttl">prefetch 별 consumer 로컬 버퍼 (unacked)</text>
-<text x="74" y="38" class="sub">도착·서비스 분포·consumer 수 고정, 디스패치 정책만 변경 · 상한은 32 / 128 / 2,048</text>
-<text x="16" y="38" class="ax">unacked (건)</text>
-<line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
-<text x="66" y="296.0" class="ax" text-anchor="end">0</text>
-<line x1="74" y1="230.5" x2="608" y2="230.5" class="gr"/>
-<text x="66" y="234.5" class="ax" text-anchor="end">125</text>
-<line x1="74" y1="169.0" x2="608" y2="169.0" class="gr"/>
-<text x="66" y="173.0" class="ax" text-anchor="end">250</text>
-<line x1="74" y1="107.5" x2="608" y2="107.5" class="gr"/>
-<text x="66" y="111.5" class="ax" text-anchor="end">375</text>
-<line x1="74" y1="46.0" x2="608" y2="46.0" class="gr"/>
-<text x="66" y="50.0" class="ax" text-anchor="end">500</text>
-<text x="74.0" y="310" class="ax" text-anchor="middle">0s</text>
-<text x="180.8" y="310" class="ax" text-anchor="middle">44s</text>
-<text x="287.6" y="310" class="ax" text-anchor="middle">88s</text>
-<text x="394.4" y="310" class="ax" text-anchor="middle">132s</text>
-<text x="501.2" y="310" class="ax" text-anchor="middle">176s</text>
-<text x="608.0" y="310" class="ax" text-anchor="middle">219s</text>
-<line x1="74" y1="292" x2="608" y2="292" stroke="#94a3b8"/>
-<text x="341.0" y="328" class="ax" text-anchor="middle">부하 시작 이후 경과 시간</text>
-<path d="M74.0,292.0 L91.9,276.3 L110.6,288.6 L130.6,287.6 L147.1,278.2 L165.7,276.3 L186.9,276.3 L204.1,278.7 L218.8,276.3 L235.9,276.3 L252.8,276.3 L267.6,276.3 L284.1,276.3 L302.1,276.3 L316.7,276.3 L333.6,276.3 L350.1,288.6 L364.5,276.3 L383.4,276.3 L400.2,276.3 L416.8,276.3 L432.9,283.6 L449.4,287.1 L467.4,279.2 L481.6,283.6 L500.1,276.3 L516.6,279.2 L533.1,276.3 L549.8,276.3 L566.1,276.3 L583.9,276.3 L601.5,292.0" fill="none" stroke="#0f766e" stroke-width="2" stroke-linejoin="round"/>
-<path d="M74.0,292.0 L91.1,276.3 L108.7,282.2 L123.3,279.7 L139.8,263.0 L156.7,258.5 L171.8,252.6 L190.9,265.9 L207.9,273.8 L224.6,261.0 L239.7,268.4 L256.3,248.7 L274.5,251.2 L291.1,259.0 L307.7,260.0 L324.0,269.9 L339.7,249.7 L356.1,264.4 L372.4,251.2 L390.6,247.2 L407.0,265.4 L423.3,260.5 L439.8,257.1 L456.0,264.0 L474.5,254.6 L490.8,236.9 L507.3,246.7 L523.7,275.8 L539.9,269.4 L558.0,259.0 L574.7,257.1 L591.1,261.5 L607.7,292.0" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linejoin="round"/>
-<path d="M74.0,292.0 L89.2,292.0 L106.0,135.1 L123.0,166.0 L138.3,208.4 L155.6,199.5 L172.4,190.6 L188.8,218.7 L205.8,199.5 L223.8,182.3 L239.9,189.7 L256.9,171.5 L273.8,131.6 L288.4,147.8 L304.9,156.2 L321.9,139.5 L339.7,164.6 L356.4,167.0 L373.1,177.9 L389.4,205.4 L405.5,171.0 L424.5,176.4 L440.9,166.5 L456.5,211.3 L473.1,150.3 L489.5,193.1 L508.8,210.3 L525.4,207.9 L542.0,202.0 L556.4,213.8 L572.9,202.9 L591.4,261.5 L608.0,292.0" fill="none" stroke="#ea580c" stroke-width="2" stroke-linejoin="round"/>
-<line x1="622" y1="52" x2="646" y2="52" stroke="#0f766e" stroke-width="2.5"/>
-<text x="652" y="56" class="t">prefetch=1</text>
-<line x1="622" y1="72" x2="646" y2="72" stroke="#7c3aed" stroke-width="2.5"/>
-<text x="652" y="76" class="t">prefetch=4</text>
-<line x1="622" y1="92" x2="646" y2="92" stroke="#ea580c" stroke-width="2.5"/>
-<text x="652" y="96" class="t">prefetch=64</text>
-</svg></div><figcaption>prefetch 별 consumer 로컬 버퍼. 상한은 16배 차이인데 실제로 찬 양은 326건이다. 꼬리를 정하는 것은 실제로 찬 양이다. 20260808-092647 / -094634 / -093145.</figcaption></figure>
-<p>대기 0에서의 2.376초는 서비스 시간 꼬리 그 자체다. <code>prefetch</code>가 키우는 것은 그 위에 얹히는 대기다.
-<code>prefetch=4</code>에서 이미 p99가 67% 나빠지는데 p50과 p95는 그대로다. 대시보드에서 흔히 보는 두
-지표가 멀쩡하니 공짜처럼 보이는 것이 가장 위험한 지점이다.</p>
-<p>broker는 스레드가 한가한지를 보지 않는다. 이 consumer에게 밀어넣을 자리가 남았는지를 본다.
-<code>prefetch=1</code>일 때만 이 둘이 같은 말이 된다. 그보다 크면 배정에 가용성 정보가 실리지 않고,
-한번 로컬 버퍼에 들어간 메시지는 옆 consumer가 놀고 있어도 회수되지 않는다. 일감을 놀리지
-않던 큐 하나가, head-of-line blocking을 가진 32개의 독립 FIFO로 쪼개진다. <code>prefetch</code>를 4에서 64로
-16배 올려도 p99가 2.6배만 나빠지는 이유도 여기 있다. <code>unacked</code> 피크가 상한 2,048의 16%인
-326건에 그쳤다. 손해는 실제로 찬 양이 정한다.</p>
+<p><code>prefetch</code>를 1 / 4 / 64로 바꿔 짝실험했다. 도착률·서비스 분포·consumer 수는 고정하고 디스패치
+정책만 바꿨다. <code>prefetch=4</code>에서 p99가 67% 나빠지는데 p50과 p95는 거의 그대로다. 대시보드에서
+흔히 보는 두 지표가 멀쩡하니 공짜처럼 보인다. broker가 스레드의 한가함을 보지 않고 로컬 버퍼에
+빈자리가 남았는지를 보고 배정하기 때문인데, 그러면 일감을 놀리지 않던 큐 하나가 head-of-line
+blocking을 가진 32개의 독립 FIFO로 쪼개진다. 그래서 <code>prefetch=1</code>로 두었다.</p>
 <blockquote>
 <p>측정 조건이 결론을 바꿨다. 같은 변경을 포화 상태(도착 &gt; 용량)에서 재면 p99 악화가 +25%로
-보인다. 포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 동시에 키워 효과를 희석하기
-때문이다. 순서를 뒤집어 재현했을 때 p99가 <code>2.372 → 2.376s</code>, <code>10.458 → 10.308s</code>로 일치해
-워밍업 교란도 배제했다.</p>
+보이고, 포화를 걷어내면 +334%다. 백로그라는 지배항이 분자와 분모를 동시에 키워 효과를
+희석하기 때문이다. 지연 분포와 런별 조건은 <a href="measurements.html">측정 기록</a> §7에 있다.</p>
 </blockquote>
 <h3 id="백로그는-병목-바로-앞에만-앉는다">백로그는 병목 바로 앞에만 앉는다</h3>
 <p>제출 1,000/s를 150초 넣었다. HTTP 133,935건 중 132,510건을 접수했고(거절 1,425건, 1.06%),
