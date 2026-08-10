@@ -26,16 +26,19 @@
     <h1>신승경 <span class="role">· Backend</span></h1>
     <p class="tagline">장애가 났을 때 <em>어디까지 복구되는지 말할 수 있는</em>
       시스템을 만드는 데 관심이 있다.</p>
-    <p class="hero-lede">온라인 저지를 혼자 만들면서, 대회 중 제출이 몰릴 때 데이터가
-      유실되거나 실시간 순위가 최종 순위와 어긋나는 문제를 주제로 삼았다.
-      메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서 피할 수 없으므로
-      그것을 전제로 설계했다.</p>
+    <p class="hero-lede">대회 중 제출이 몰릴 때 데이터가 유실되거나 실시간 순위가 최종 순위와
+      어긋나는 문제를 주제로 삼았다. 메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서
+      피할 수 없으므로 그것을 전제로 설계했다.</p>
+    <p class="hero-lede"><b>Java 17 · Spring Boot 3.4 · MySQL · Redis · RabbitMQ로 온라인 저지
+      API 서버를 혼자 만들었다</b> (2025.09 ~, 11개월). 요구사항은
+      <a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">Codeforces</a>
+      <b>Candidate Master</b>로 대회를 뛰며 겪은 것들에서 나왔다.</p>
 
     <ul class="metrics">
       <li class="metric">
         <span class="cond">제출 1,000/s × 150초</span>
         <span class="fig">127,687건 <small>전량 채점</small></span>
-        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 배수 10.4분</span>
+        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 적체 해소 10.4분</span>
       </li>
       <li class="metric">
         <span class="cond">judge 노드 1대 SIGKILL</span>
@@ -96,7 +99,13 @@
 <li><a href="#다시-흘려보내도-안전한가" data-ch="ch3">다시 흘려보내도 안전한가</a></li>
 </ol>
 </li>
-<li><a href="#ch4">4. 남은 한계</a>
+<li><a href="#ch4">4. 랭킹 조회와 데드락</a>
+<ol class="sub">
+<li><a href="#offset이-비싼-것은-정렬이-아니라-버리는-일이다" data-ch="ch4">OFFSET이 비싼 것은 정렬이 아니라 버리는 일이다</a></li>
+<li><a href="#락-순서는-코드가-아니라-인덱스가-정한다" data-ch="ch4">락 순서는 코드가 아니라 인덱스가 정한다</a></li>
+</ol>
+</li>
+<li><a href="#ch5">5. 남은 한계</a>
 </li>
 <li><a href="#보조-자료">보조 자료</a>
 </li>
@@ -131,6 +140,14 @@
         집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
       <a class="ref" href="#최대-처리량은-하나가-아니다">→ 2장 · “최대 처리량”은 하나가 아니다</a>
     </article>
+    <article class="strength">
+      <h3>실행계획과 락 경로까지 내려가서 원인을 가른다.</h3>
+      <p>깊은 페이지 랭킹 조회가 233초까지 갔다. 집계 테이블과 스냅숏으로 뒤쪽 페이지를
+        0.113ms까지 줄였지만 solved 랭킹은 아직 47.7초다 — <strong>병목이 사라진 게 아니라
+        tie group 안으로 옮겨간 것</strong>이고 실행계획이 그걸 보여준다. 데드락 세 건도
+        격리 수준·잠금 진입점·인덱스로 원인 층이 매번 달랐다.</p>
+      <a class="ref" href="#ch4">→ 4장 · 랭킹 조회와 데드락</a>
+    </article>
   </div>
 </section>
 <section class="chapter" id="ch1">
@@ -140,8 +157,7 @@
   <p class="chapter-lede">제출 · 채점 · 순위를 돌려주는 API 서버. 다루는 범위는 <strong>대회 제출 경로</strong>다. <strong>MySQL은 원본, Redis는 파생, RabbitMQ는 전달</strong> — 저장소마다 역할을 하나씩만 준 것이 이후 두 장의 판단 기준 전부다.</p>
 <p>문제를 풀고 코드를 제출하면 채점 결과와 순위를 돌려주는 API 서버다.
 일반 제출도 있지만 이 문서가 다루는 범위는 <strong>대회 제출 경로</strong>다. 정해진 시간에 제출이 몰리고,
-유실되면 참가자가 대회 중에 알 수 없으며, 실시간 순위가 최종 순위와 달라지면 안 된다.
-Codeforces를 쓰면서 겪은 것들이 그대로 요구사항이 됐다.</p>
+유실되면 참가자가 대회 중에 알 수 없으며, 실시간 순위가 최종 순위와 달라지면 안 된다.</p>
 <div class="table-wrap"><table>
 <thead>
 <tr>
@@ -674,7 +690,7 @@ outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으�
 <td>브로커</td>
 <td style="text-align: center;">✓</td>
 <td style="text-align: right;"><strong>94,211</strong></td>
-<td>이후 9분에 걸쳐 배수</td>
+<td>이후 9분에 걸쳐 해소</td>
 </tr>
 <tr>
 <td>scoreboard 반영 대기</td>
@@ -687,11 +703,11 @@ outbox를 <code>PUBLISHED</code>로 바꾸고 그 이후는 추적하지 않으�
 </table></div>
 <p>각 값은 그 버퍼의 개별 피크이고 같은 시점의 값이 아니다. judge outbox는 유입(1,014)과
 relay(640)의 차이만큼만 쌓이므로 부하가 멈추면 곧 따라잡는다. RabbitMQ는 relay(640)와
-채점(150)의 격차가 4배라 나머지 9분을 여기서 쓴다. 총 배수 <strong>10.4분, 유실 0</strong>.</p>
+채점(150)의 격차가 4배라 나머지 9분을 여기서 쓴다. 총 적체 해소(drain) <strong>10.4분, 유실 0</strong>.</p>
 <figure class="diagram chart"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 340" width="840" height="340" font-family="system-ui,-apple-system,Segoe UI,sans-serif">
 <style>.t{font-size:12px;fill:#334155}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:11px;fill:#64748b}.gr{stroke:#e2e8f0;stroke-width:1}.mk{font-size:11px;font-weight:600}</style>
 <rect width="840" height="340" fill="#ffffff"/>
-<text x="74" y="22" class="ttl">단계별 적체와 배수 — 제출 1,000/s를 150초</text>
+<text x="74" y="22" class="ttl">단계별 적체와 해소 — 제출 1,000/s를 150초</text>
 <text x="74" y="38" class="sub">var/loadtest-20260808-104446/pipeline.csv · 접수 132,510건 · 중복 제외 127,687건 채점 · 유실 0</text>
 <text x="16" y="38" class="ax">건</text>
 <line x1="74" y1="292.0" x2="608" y2="292.0" class="gr"/>
@@ -1278,8 +1294,9 @@ Redis 적용과 MySQL 완료 표시 사이의 틈은 Lua가 offset과 함께 기
 <pre><code>outbox   어긋남 탐지  →  복구 스캔이 대상 행을 되살림(주기 × 배치 상한)  →  적용
 stream   되감긴 offset + 1로 재구독  →  적용
 </code></pre>
-<p><strong>남는 차이는 시간이 아니라 노브다.</strong> outbox는 추격 속도를 설정값이 정하므로 복구 시간이 손실 구간
-크기에 비례한다. stream은 되감긴 offset이 곧 재시작점이라 정할 값이 없다. 두 구현의 처리 성능은
+<p><strong>남는 차이는 시간이 아니라 정해야 할 설정값이 있느냐다.</strong> outbox는 추격 속도를 설정값이
+정하므로 복구 시간이 손실 구간 크기에 비례한다. stream은 되감긴 offset이 곧 재시작점이라
+정할 값이 없다. 두 구현의 처리 성능은
 서로 밀어낼 정도의 차이가 아니었으므로, 남는 판단 기준이 이것이었다.
 31초의 내역은 <a href="measurements.html">측정 기록</a> §8.1에 있다.</p>
 <h3 id="다시-흘려보내도-안전한가">다시 흘려보내도 안전한가</h3>
@@ -1302,8 +1319,343 @@ penalty는 <code>정답 시각(분) + 그 이전 오답 수 × 5</code>로 계�
 </section>
 <section class="chapter" id="ch4">
   <p class="chapter-no">CHAPTER 4</p>
+  <h2>랭킹 조회와 데드락</h2>
+  <p class="chapter-lede">쓰기가 아니라 <strong>읽기 경로와 잠금</strong>에서 부딪힌 것. 깊은 페이지 랭킹 조회가 233초까지 갔고, 집계 테이블과 스냅숏으로 <strong>0.113ms</strong>까지 줄였다. 데드락 세 건은 <strong>격리 수준 · 잠금 진입점 · 인덱스</strong>로 원인 층이 매번 달랐다.</p>
+<p>앞 두 장은 쓰기와 전달 경로다. 이 장은 같은 데이터를 <strong>읽을 때</strong>와 <strong>잠글 때</strong> 부딪힌 것이다.
+둘 다 처음 만든 구조가 동작은 했고, 데이터가 커지거나 노드가 늘었을 때만 무너졌다.
+어느 쪽도 코드를 보고는 알 수 없었다 — <strong>실행계획과 락 기록까지 내려가서야 원인이 갈렸다.</strong></p>
+<h3 id="offset이-비싼-것은-정렬이-아니라-버리는-일이다"><code>OFFSET</code>이 비싼 것은 정렬이 아니라 버리는 일이다</h3>
+<p>랭킹 페이지에는 "내 순위가 있는 페이지로 바로 가기"가 있다. 커서 페이지네이션을 쓸 수 없다 —
+사용자가 다음 페이지가 아니라 <strong>임의의 지점으로 건너뛰기</strong> 때문이다.</p>
+<pre><code class="language-sql">SELECT ...
+FROM user
+ORDER BY solved_count DESC, streak_last_solved_date ASC, id ASC
+LIMIT 100 OFFSET :offset
+</code></pre>
+<p>정렬 인덱스를 타도 깊은 페이지에서는 앞의 row를 전부 읽고 버린다. 비용이 <code>OFFSET</code>에 거의
+비례하므로 유저가 늘면 뒤쪽 페이지부터 무너진다. <code>around me</code>에는 하나가 더 붙는다 —
+<strong>내 rank를 먼저 알아야</strong> 어느 페이지를 읽을지 정할 수 있다.</p>
+<p>필요한 값은 두 개뿐이다. <strong>내 rank</strong>와 <strong>그 rank가 속한 페이지의 시작점.</strong> 이 둘만 싸게 구하면
+전체 정렬 결과를 훑을 이유가 없다. 랭킹마다 값이 변하는 방식이 달라서 다르게 풀었다.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>랭킹</th>
+<th>값이 변하는 방식</th>
+<th>rank를 언제 계산하나</th>
+<th>무엇을 유지하나</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>current streak</td>
+<td>하루 한 번 배치로</td>
+<td><strong>미리</strong></td>
+<td><code>user_streak_rank_snapshot</code>에 <code>snapshot_rank</code></td>
+</tr>
+<tr>
+<td>solved</td>
+<td>제출마다, 1씩 증가만</td>
+<td><strong>조회 시점에</strong></td>
+<td><code>solved_count_bucket</code>에 값별 유저 수·누적 상위 수</td>
+</tr>
+</tbody>
+</table></div>
+<p>streak은 조회 시점에 계산할 것이 없다. <code>snapshot_rank BETWEEN ? AND ?</code>로 필요한 구간만 읽는다.
+solved는 제출마다 바뀌어 snapshot이 맞지 않으므로 <strong>1씩 증가만 한다</strong>는 성질을 쓴다 — 값별 버킷만
+유지하면 전체를 재정렬하지 않고 "나보다 위에 몇 명" 을 상수 시간에 얻는다.</p>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="100%" role="img" aria-label="랭킹 조회 지연 — naive OFFSET과 개선 후 비교">
+<style>.t{font-family:'Malgun Gothic','Segoe UI',sans-serif;fill:#1e293b}.ttl{font-size:15px;font-weight:700;fill:#0f172a}.sub{font-size:11.5px;fill:#64748b}.ax{font-size:10.5px;fill:#94a3b8}.lb{font-size:11.5px;font-weight:600}.val{font-size:10.5px;font-weight:700}.gr{stroke:#e2e8f0;stroke-width:1}.grp{font-size:11px;font-weight:700;fill:#475569;letter-spacing:.04em}</style>
+<rect width="900" height="430" fill="#ffffff"/>
+<text x="24" y="26" class="t ttl">랭킹 조회 지연 — 깊은 페이지일수록 갈린다</text>
+<text x="24" y="44" class="t sub">가로축 로그 눈금 · 페이지 100건 · 지점마다 1회 측정 · 값은 조회 1회에 걸린 시간</text>
+<line x1="204.6" y1="62" x2="204.6" y2="362" class="gr"/>
+<text x="204.6" y="378" class="t ax" text-anchor="middle">0.1ms</text>
+<line x1="293.0" y1="62" x2="293.0" y2="362" class="gr"/>
+<text x="293.0" y="378" class="t ax" text-anchor="middle">1ms</text>
+<line x1="381.3" y1="62" x2="381.3" y2="362" class="gr"/>
+<text x="381.3" y="378" class="t ax" text-anchor="middle">10ms</text>
+<line x1="469.7" y1="62" x2="469.7" y2="362" class="gr"/>
+<text x="469.7" y="378" class="t ax" text-anchor="middle">100ms</text>
+<line x1="558.1" y1="62" x2="558.1" y2="362" class="gr"/>
+<text x="558.1" y="378" class="t ax" text-anchor="middle">1s</text>
+<line x1="646.4" y1="62" x2="646.4" y2="362" class="gr"/>
+<text x="646.4" y="378" class="t ax" text-anchor="middle">10s</text>
+<line x1="734.8" y1="62" x2="734.8" y2="362" class="gr"/>
+<text x="734.8" y="378" class="t ax" text-anchor="middle">100s</text>
+<text x="166" y="83.0" class="t lb" text-anchor="end">streak 101</text>
+<text x="166" y="97.0" class="t ax" text-anchor="end">10만 행 snapshot</text>
+<rect x="178" y="75.0" width="310.0" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="494.0" y="84.0" class="t val" fill="#ea580c">161ms</text>
+<rect x="178" y="88.0" width="94.5" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="278.5" y="97.0" class="t val" fill="#0f766e">0.586ms</text>
+<text x="880" y="91.0" class="t val" text-anchor="end" fill="#0f172a">275× 빠름</text>
+<text x="166" y="133.0" class="t lb" text-anchor="end">streak 49,601</text>
+<rect x="178" y="125.0" width="463.9" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="647.9" y="134.0" class="t val" fill="#ea580c">8.9s</text>
+<rect x="178" y="138.0" width="83.7" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="267.7" y="147.0" class="t val" fill="#0f766e">0.443ms</text>
+<text x="880" y="141.0" class="t val" text-anchor="end" fill="#0f172a">20,068× 빠름</text>
+<text x="166" y="183.0" class="t lb" text-anchor="end">streak 99,301</text>
+<rect x="178" y="175.0" width="482.4" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="666.4" y="184.0" class="t val" fill="#ea580c">14.4s</text>
+<rect x="178" y="188.0" width="31.3" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="215.3" y="197.0" class="t val" fill="#0f766e">0.113ms</text>
+<text x="880" y="191.0" class="t val" text-anchor="end" fill="#0f172a">127,274× 빠름</text>
+<line x1="24" y1="212.0" x2="788" y2="212.0" stroke="#cbd5e1" stroke-width="1"/>
+<text x="166" y="233.0" class="t lb" text-anchor="end">solved 101</text>
+<text x="166" y="247.0" class="t ax" text-anchor="end">800만+ 행 user</text>
+<rect x="178" y="225.0" width="228.2" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="412.2" y="234.0" class="t val" fill="#ea580c">19.1ms</text>
+<rect x="178" y="238.0" width="237.2" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="421.2" y="247.0" class="t val" fill="#0f766e">24.2ms</text>
+<text x="880" y="241.0" class="t val" text-anchor="end" fill="#ea580c">0.8× 손해</text>
+<text x="166" y="283.0" class="t lb" text-anchor="end">solved 4,000,501</text>
+<rect x="178" y="275.0" width="586.7" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="770.7" y="284.0" class="t val" fill="#ea580c">217.8s</text>
+<rect x="178" y="288.0" width="341.8" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="525.8" y="297.0" class="t val" fill="#0f766e">369ms</text>
+<text x="880" y="291.0" class="t val" text-anchor="end" fill="#0f172a">590× 빠름</text>
+<text x="166" y="333.0" class="t lb" text-anchor="end">solved 8,000,901</text>
+<rect x="178" y="325.0" width="589.3" height="11.0" rx="2" fill="#ea580c" fill-opacity="0.88"/>
+<text x="773.3" y="334.0" class="t val" fill="#ea580c">233.2s</text>
+<rect x="178" y="338.0" width="528.4" height="11.0" rx="2" fill="#0f766e" fill-opacity="0.88"/>
+<text x="712.4" y="347.0" class="t val" fill="#0f766e">47.7s</text>
+<text x="880" y="341.0" class="t val" text-anchor="end" fill="#0f172a">4.9× 빠름</text>
+<text x="24" y="137.0" class="t grp">SNAPSHOT</text>
+<text x="24" y="287.0" class="t grp">BUCKET</text>
+<rect x="178" y="393" width="22" height="10" rx="2" fill="#ea580c"/>
+<text x="208" y="402" class="t sub">naive — ORDER BY … LIMIT OFFSET</text>
+<rect x="436" y="393" width="22" height="10" rx="2" fill="#0f766e"/>
+<text x="466" y="402" class="t sub">개선 후 — snapshot_rank 범위 / bucket 시작점</text>
+</svg></div><figcaption><strong>그림 6.</strong> 가로축은 로그 눈금이다. 주황이 <code>OFFSET</code> 방식, 청록이 개선 후.
+<strong>streak은 뒤로 갈수록 빨라지고</strong>(읽을 구간이 같으니 앞 row가 없다), solved는 앞 페이지에서
+오히려 느려지고 뒤 페이지에서 47.7초가 남는다. 이 두 예외가 이 그림의 전부다.</figcaption></figure>
+<p>측정 조건은 페이지 100건, current streak은 10만 행 snapshot, solved는 800만 행 이상의 <code>user</code>
+테이블이다. 지점은 각각 <code>101 / 49,601 / 99,301</code>, <code>101 / 4,000,501 / 8,000,901</code>.</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>랭킹 · 지점</th>
+<th style="text-align: right;">naive <code>OFFSET</code></th>
+<th style="text-align: right;">개선 후</th>
+<th style="text-align: right;">배수</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>streak 101</td>
+<td style="text-align: right;">161 ms</td>
+<td style="text-align: right;">0.586 ms</td>
+<td style="text-align: right;">275×</td>
+</tr>
+<tr>
+<td>streak 49,601</td>
+<td style="text-align: right;">8,890 ms</td>
+<td style="text-align: right;">0.443 ms</td>
+<td style="text-align: right;">20,068×</td>
+</tr>
+<tr>
+<td>streak 99,301</td>
+<td style="text-align: right;">14,382 ms</td>
+<td style="text-align: right;"><strong>0.113 ms</strong></td>
+<td style="text-align: right;">127,274×</td>
+</tr>
+<tr>
+<td>solved 101</td>
+<td style="text-align: right;">19.1 ms</td>
+<td style="text-align: right;"><strong>24.2 ms</strong></td>
+<td style="text-align: right;"><strong>0.8×</strong></td>
+</tr>
+<tr>
+<td>solved 4,000,501</td>
+<td style="text-align: right;">217,842 ms</td>
+<td style="text-align: right;">369 ms</td>
+<td style="text-align: right;">590×</td>
+</tr>
+<tr>
+<td>solved 8,000,901</td>
+<td style="text-align: right;">233,231 ms</td>
+<td style="text-align: right;"><strong>47,747 ms</strong></td>
+<td style="text-align: right;"><strong>4.9×</strong></td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>좋은 두 줄만 인용하면 이 표를 잘못 읽는 것이다.</strong></p>
+<p><strong>앞 페이지에서는 오히려 느려졌다.</strong> solved 101이 19.1ms에서 24.2ms가 됐다. 버릴 row가 없어
+원래 싸던 자리에 bucket 조회가 한 번 더 붙기 때문이다. 개선이 아니라 <strong>깊은 페이지를 위해 앞
+페이지에서 지불한 값</strong>이고, 앞 페이지만 재면 이 구조는 도입할 이유가 없어 보인다.</p>
+<p><strong>뒤 페이지는 여전히 47.7초다.</strong> 이 작업에서 제일 중요한 수치가 이것이다. bucket이 페이지
+시작점은 상수 시간에 찾아주지만, 같은 solved count를 가진 <strong>tie group 안에서는 다시 offset으로
+읽는다.</strong> 실행계획이 그대로 보여준다.</p>
+<pre><code class="language-text">-&gt; Limit/Offset: 100/23638 row(s)  (actual time=183..183 rows=100 loops=1)
+    -&gt; Index range scan on u using idx_user_ranking
+       over (8 &lt;= solved_count) with index condition: (u.solved_count &lt;= 8)
+       (actual time=0.346..183 rows=23738 loops=1)
+</code></pre>
+<p><code>solved_count = 8</code> 하나에 23,738행이 몰려 있다. <strong>병목이 사라진 것이 아니라 전체 데이터셋에서
+tie group 내부로 옮겨간 것이다.</strong> 그래서 이 개선폭은 알고리즘이 아니라 값의 분포가 정한다 —
+분포가 평평하면 같은 구조로도 이 수치는 나오지 않는다. streak이 sub-ms인 것도 알고리즘이
+좋아서가 아니라 <strong>조회 시점에 rank를 계산하지 않기 때문이다.</strong></p>
+<blockquote>
+<p><strong>이 표를 용량 수치로 쓰지 않는다.</strong> 지점마다 1회 측정이고 버퍼 풀 상태를 통제하지 않았다.
+배수의 자릿수(두 자리냐 다섯 자리냐)는 근거로 쓰지만 개별 값은 그렇게 쓰지 않는다.
+저장소에는 무작위 rank 1,000개로 같은 비교를 돌려 min·p50·p95·max를 내는
+<code>RankAroundBenchmarkLoadTest</code>가 있고, 위 표를 대신하려면 그것으로 다시 재야 한다.</p>
+</blockquote>
+<h3 id="락-순서는-코드가-아니라-인덱스가-정한다">락 순서는 코드가 아니라 인덱스가 정한다</h3>
+<p>대회 입력과 최종화, 대회 중 일반 제출, 스케일 아웃을 겹쳐 돌리자 데드락이 났다. 외래키를 걷어내고
+접근 순서를 정렬하는 것으로 잡히지 않는 것이 세 번 남았다. 당시 채점 분배는 2장의 V3 —
+<strong>DB 상태값으로 작업을 claim하던 구조</strong>다.</p>
+<figure class="diagram"><div class="fig-scroll"><svg preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="100%" role="img" aria-label="데드락 세 번과 각각 락 순서를 정한 층">
+  <style>
+    .bx   { rx: 7; stroke-width: 1.5; }
+    .sql  { fill: #eff6ff; stroke: #2563eb; }
+    .warn { fill: #fff7ed; stroke: #ea580c; }
+    .ok   { fill: #f0fdfa; stroke: #0f766e; }
+    .t    { font-family: 'Malgun Gothic','Segoe UI',sans-serif; fill: #1e293b; }
+    .ttl  { font-size: 13px; font-weight: 700; }
+    .sub  { font-size: 11px; fill: #475569; }
+    .mono { font-family: Consolas,'Courier New',monospace; font-size: 10.5px; fill: #334155; }
+    .tag  { font-size: 10.5px; font-weight: 700; letter-spacing: .05em; }
+    .ln   { stroke: #94a3b8; stroke-width: 1.5; fill: none; }
+    .cross{ stroke: #ea580c; stroke-width: 1.6; fill: none; stroke-dasharray: 5 3; }
+    .fix  { font-size: 11px; fill: #0f766e; font-weight: 700; }
+    .cap  { font-size: 11px; fill: #64748b; }
+  </style>
+  <defs>
+    <marker id="a" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#94a3b8"/>
+    </marker>
+    <marker id="ao" markerWidth="9" markerHeight="9" refX="7.5" refY="3.2" orient="auto">
+      <path d="M0,0 L7.5,3.2 L0,6.4 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="560" fill="#ffffff"/>
+
+  <text x="24" y="26" class="t ttl" font-size="14">세 번 모두 "락 순서" 문제였지만, 순서를 정한 것은 매번 달랐다</text>
+  <text x="24" y="44" class="t cap">왼쪽이 두 트랜잭션이 실제로 잠근 순서 · 주황 점선이 교차 대기 · 오른쪽이 고친 지점</text>
+
+  <!-- ================= ① 격리 수준 ================= -->
+  <text x="24" y="86" class="t tag" fill="#ea580c">① 격리 수준</text>
+  <text x="122" y="86" class="t sub">REPEATABLE READ 에서 gap 락이 레코드 락보다 먼저 잡힌다</text>
+
+  <rect x="24" y="98" width="250" height="52" class="bx warn"/>
+  <text x="38" y="118" class="t ttl" font-size="12">TX A · claim UPDATE</text>
+  <text x="38" y="136" class="t mono">gap lock  →  record lock</text>
+
+  <rect x="24" y="164" width="250" height="52" class="bx warn"/>
+  <text x="38" y="184" class="t ttl" font-size="12">TX B · INSERT</text>
+  <text x="38" y="202" class="t mono">record lock  →  gap lock</text>
+
+  <path d="M282,124 C314,124 314,190 282,190" class="cross" marker-end="url(#ao)"/>
+  <path d="M282,190 C314,190 314,124 282,124" class="cross" marker-end="url(#ao)"/>
+  <text x="326" y="152" class="t sub" fill="#ea580c">방향이 반대라 교차</text>
+
+  <line x1="470" y1="157" x2="516" y2="157" class="ln" marker-end="url(#a)"/>
+  <rect x="524" y="122" width="352" height="70" class="bx ok"/>
+  <text x="540" y="143" class="t fix">READ COMMITTED 로 낮춘다</text>
+  <text x="540" y="163" class="t sub">claim UPDATE 가 gap 락을 잡지 않는다.</text>
+  <text x="540" y="180" class="t sub">id 가 1씩 증가해도 순서는 격리 수준이 정했다.</text>
+
+  <!-- ================= ② 잠금 진입점 ================= -->
+  <line x1="24" y1="238" x2="876" y2="238" stroke="#e2e8f0" stroke-width="1"/>
+
+  <text x="24" y="266" class="t tag" fill="#ea580c">② 잠금 진입점</text>
+  <text x="122" y="266" class="t sub">ORDER BY 로 대상 순서를 맞춰도, 어디서부터 타는지가 다르다</text>
+
+  <rect x="24" y="278" width="250" height="52" class="bx warn"/>
+  <text x="38" y="298" class="t ttl" font-size="12">회수 UPDATE … WHERE status</text>
+  <text x="38" y="316" class="t mono">secondary idx  →  PK</text>
+
+  <rect x="24" y="344" width="250" height="52" class="bx warn"/>
+  <text x="38" y="364" class="t ttl" font-size="12">완료 UPDATE … WHERE id</text>
+  <text x="38" y="382" class="t mono">PK  →  secondary idx</text>
+
+  <path d="M282,304 C314,304 314,370 282,370" class="cross" marker-end="url(#ao)"/>
+  <path d="M282,370 C314,370 314,304 282,304" class="cross" marker-end="url(#ao)"/>
+  <text x="326" y="332" class="t sub" fill="#ea580c">정렬과 무관하게 교차</text>
+
+  <line x1="470" y1="337" x2="516" y2="337" class="ln" marker-end="url(#a)"/>
+  <rect x="524" y="292" width="352" height="90" class="bx ok"/>
+  <text x="540" y="313" class="t fix">진입점을 하나로 — 먼저 고르고, id 로만 UPDATE</text>
+  <text x="540" y="333" class="t mono">SELECT … FOR UPDATE SKIP LOCKED</text>
+  <text x="540" y="351" class="t mono">UPDATE … WHERE id = ?</text>
+  <text x="540" y="371" class="t sub">지금 relay 의 outbox claim 이 이 형태다.</text>
+
+  <!-- ================= ③ 인덱스 ================= -->
+  <line x1="24" y1="418" x2="876" y2="418" stroke="#e2e8f0" stroke-width="1"/>
+
+  <text x="24" y="446" class="t tag" fill="#ea580c">③ 인덱스</text>
+  <text x="122" y="446" class="t sub">UPDATE 가 건드리는 보조 인덱스끼리 교차한다 — 쿼리문에 적혀 있지 않다</text>
+
+  <rect x="24" y="458" width="250" height="40" class="bx sql"/>
+  <text x="38" y="482" class="t mono">(status, claimed_at, id) 보유</text>
+
+  <rect x="24" y="506" width="250" height="40" class="bx sql"/>
+  <text x="38" y="530" class="t mono">(status, id) 보유</text>
+
+  <path d="M282,478 C314,478 314,526 282,526" class="cross" marker-end="url(#ao)"/>
+  <path d="M282,526 C314,526 314,478 282,478" class="cross" marker-end="url(#ao)"/>
+  <text x="326" y="506" class="t sub" fill="#ea580c">서로 상대를 기다림</text>
+
+  <line x1="470" y1="502" x2="516" y2="502" class="ln" marker-end="url(#a)"/>
+  <rect x="524" y="466" width="352" height="72" class="bx ok"/>
+  <text x="540" y="487" class="t fix">(status, id) 를 지운다</text>
+  <text x="540" y="507" class="t sub">쿼리 패턴에는 앞의 하나면 충분했다.</text>
+  <text x="540" y="524" class="t sub">더해서가 아니라 빼서 고친 경우다.</text>
+</svg></div><figcaption><strong>그림 7.</strong> 세 번 모두 "락을 잡는 순서"가 문제였지만 순서를 정하는 주체가 매번 달랐다 —
+격리 수준, 잠금 진입점, 그리고 어떤 보조 인덱스가 존재하는가.
+<strong>코드에서 보이는 순서는 셋 중 어느 것도 아니다.</strong></figcaption></figure>
+<h4 id="①-격리-수준-증가하는-키인데도-gap-락이-교차했다">① 격리 수준 — 증가하는 키인데도 gap 락이 교차했다</h4>
+<pre><code class="language-sql">-- claim: PENDING 을 잡아 PROCESSING 으로
+UPDATE contest_submission SET judge_status = 'PROCESSING'
+WHERE judge_status = 'PENDING' ORDER BY id LIMIT 100;
+
+-- 같은 시간에 들어오는 신규 제출
+INSERT INTO contest_submission (..., judge_status = 'PENDING', ...) VALUES (...);
+</code></pre>
+<p>id가 1씩 증가하니 두 문장이 같은 방향으로 잠글 것이라 봤다. 실제로는 REPEATABLE READ에서
+claim UPDATE가 <strong>레코드 락보다 먼저 gap 락</strong>을 잡고, INSERT는 <strong>레코드 락을 잡은 뒤 gap</strong>을
+기다린다. 방향이 반대라 교차한다. <strong>격리 수준을 READ COMMITTED로 낮춰</strong> claim UPDATE가 gap 락을
+잡지 않게 했다.</p>
+<h4 id="②-잠금-진입점-한쪽은-보조-인덱스-한쪽은-기본-키">② 잠금 진입점 — 한쪽은 보조 인덱스, 한쪽은 기본 키</h4>
+<pre><code class="language-sql">-- 오래 붙잡힌 작업 회수
+UPDATE contest_submission SET judge_status = 'PENDING'
+WHERE judge_status = 'PROCESSING' AND judge_claimed_at &lt; ?
+ORDER BY judge_claimed_at, id LIMIT ?;
+
+-- 처리 완료 기록
+UPDATE contest_submission SET judge_status = 'DONE'
+WHERE id = ? AND judge_status = 'PROCESSING' AND judge_claim_token = ?;
+</code></pre>
+<p><code>ORDER BY</code>로 대상 순서를 맞추면 될 줄 알았다. 한쪽은 보조 인덱스부터, 다른 쪽은 기본 키부터 락을
+타므로 <strong>정렬해 둔 순서와 무관하게</strong> 교차했다. <code>SELECT … FOR UPDATE SKIP LOCKED</code>로 대상 id를 먼저
+고르고, <strong>양쪽 모두 <code>WHERE id = ?</code>로만 UPDATE</strong>하게 나눴다.</p>
+<h4 id="③-인덱스-update가-건드리는-보조-인덱스끼리-교차했다">③ 인덱스 — UPDATE가 건드리는 보조 인덱스끼리 교차했다</h4>
+<p>그래도 났다. UPDATE가 수정하는 보조 인덱스에 락이 잠깐 걸렸다 풀리는데 그것이 다른 row의 수정과
+교차했다 — 한쪽은 <code>(status, claimed_at, id)</code>를 잡고 <code>(status, id)</code>를 기다리고, 반대쪽은 반대였다.
+당시 쿼리 패턴에는 <code>(status, claimed_at, id)</code> 하나면 충분했으므로 <strong><code>(status, id)</code>를 지웠다.</strong>
+인덱스를 더해서가 아니라 <strong>빼서</strong> 고친 경우다.</p>
+<p><strong>락 순서를 코드 레벨에서 맞추는 것만으로는 부족하다.</strong> 어떤 인덱스가 있느냐가 잠금 경로를 정하고,
+그건 쿼리문에 적혀 있지 않다. 그래서 순서를 맞추는 것과 <strong>데드락이 나도 회복되는 구조(재시도·멱등)</strong>
+를 함께 두는 쪽으로 결론이 났다.</p>
+<p><strong>이것이 2장에서 broker로 넘어간 이유의 나머지 절반이다.</strong> 2장에는 timeout·lease 값을 정할 근거가
+없었다고 적었는데, 그 구조를 유지하는 비용에는 이 세 번도 들어 있었다. 다만 ②에서 얻은 형태는
+지금도 남아 있다 — relay가 judge outbox를 claim하는 코드도
+<code>SELECT … FOR UPDATE SKIP LOCKED</code>로 id를 고른 뒤 <code>WHERE id = ?</code>로만 UPDATE한다.</p>
+<blockquote>
+<p><strong>재현 절차를 남기지 않았다.</strong> 세 번 모두 부하를 겹쳐 돌리다 만났고, <code>SHOW ENGINE INNODB
+STATUS</code>의 데드락 기록과 실행계획으로 원인을 좁혔다. <strong>회귀 테스트로 고정하지 못했으므로
+"다시 안 난다"고는 말하지 않는다.</strong> 지금 구조에서 같은 경로가 사라진 것과, 그 경로가 안전하다는
+것을 증명한 것은 다른 이야기다.</p>
+</blockquote>
+</section>
+<section class="chapter" id="ch5">
+  <p class="chapter-no">CHAPTER 5</p>
   <h2>남은 한계</h2>
-  <p class="chapter-lede"><strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, 재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, 그리고 대회 제출과 일반 제출이 같은 큐를 쓴다는 것.</p>
+  <p class="chapter-lede"><strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, 재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, 대회·일반 제출이 같은 큐를 쓴다는 것, 그리고 데드락에 회귀 테스트가 없다는 것.</p>
 <p><strong>채점이 <code>Thread.sleep</code>이다.</strong> 블로킹 시간만 흉내 낼 뿐 커넥션 풀 고갈, 타임아웃, 부분 실패를
 모델링하지 않는다. 실제 채점 서버를 붙이면 실패 모드가 하나 더 생긴다.</p>
 <p><strong>검증한 장애는 프로세스 즉사 하나다.</strong> SIGKILL은 TCP를 즉시 끊으므로 broker가 곧바로 감지한다.
@@ -1318,6 +1670,12 @@ penalty는 <code>정답 시각(분) + 그 이전 오답 수 × 5</code>로 계�
 <strong>그 하나가 30초를 쥐고 있는 것 자체는 막지 못한다.</strong> 슬롯 32개 중 몇이 일반 제출에 물려 있으면
 대회 제출의 실효 용량이 그만큼 줄고, 위에서 본 <code>ready ÷ 처리율</code> 관계 그대로 꼬리가 늘어난다.
 큐를 분리하거나 대회 제출에 별도 슬롯을 주는 것이 다음 과제다.</p>
+<p><strong>solved 랭킹의 tie group은 그대로 남아 있다.</strong> bucket이 페이지 시작점을 상수 시간에 찾아주지만
+같은 solved count 안에서는 다시 offset이라 뒤쪽 페이지가 47.7초다. tie group 안에 보조 순서를
+두거나 solved도 streak처럼 snapshot으로 돌리는 두 방향이 있는데, <strong>갱신 비용과 조회 비용 중
+어디에 부담을 둘지를 정하지 못했다.</strong> 제출마다 바뀌는 값이라 snapshot 주기가 곧 순위의 신선도다.</p>
+<p><strong>데드락 세 건은 회귀 테스트가 없다.</strong> 지금 구조에서 그 경로가 사라진 것과, 그 경로가 안전하다는
+것을 증명한 것은 다르다. 재현 절차를 남기지 못한 것이 이 프로젝트에서 가장 아쉬운 부분이다.</p>
 </section>
 <section class="chapter" id="보조-자료">
   <p class="chapter-no">APPENDIX</p>

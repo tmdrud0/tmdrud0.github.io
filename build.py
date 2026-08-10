@@ -36,17 +36,19 @@ EMAIL = "tmdrud049@gmail.com"
 # ---------------------------------------------------------------- 원고 손질
 
 # SUBMISSION.md 는 차트를 싣지 않는다(지면 때문). 웹에서는 넣는다.
-# (앵커 줄, before|after, 삽입할 마크다운)
+# (앵커 줄의 앞부분, before|after, 삽입할 마크다운)
+# 앵커는 원고를 고쳐도 잘 안 바뀌는 앞부분만 잡는다. 문장 끝까지 적으면 표현을 다듬을 때마다
+# 빌드가 깨진다. 두 번 이상 걸리면 실패시켜서 엉뚱한 자리에 붙는 것을 막는다.
 CHART_INSERTS = [
     (
-        "| 64 | 1.297s | 6.433s | **10.308s** | 16.706s | 6.37 |",
+        "| 64 | 1.297s |",
         "after",
         "![prefetch 별 consumer 로컬 버퍼. 상한은 16배 차이인데 실제로 찬 양은"
         " 326건 — 상한이 아니라 얼마나 찼는지가 꼬리를 정한다."
         " `20260808-092647` / `-094634` / `-093145`.](diagrams/chart-prefetch.svg)",
     ),
     (
-        "채점(150)의 격차가 4배라 나머지 9분을 여기서 쓴다. 총 배수 **10.4분, 유실 0**.",
+        "채점(150)의 격차가 4배라",
         "after",
         "![단계별 적체와 배수. 부하는 150초에 끝나는데 RabbitMQ ready 는 209초까지"
         " 계속 올라 94,211이 된다 — 백로그는 상한이 꺾이는 지점 바로 앞에만 앉는다."
@@ -380,16 +382,19 @@ HERO = f"""<header class="hero">
     <h1>신승경 <span class="role">· Backend</span></h1>
     <p class="tagline">장애가 났을 때 <em>어디까지 복구되는지 말할 수 있는</em>
       시스템을 만드는 데 관심이 있다.</p>
-    <p class="hero-lede">온라인 저지를 혼자 만들면서, 대회 중 제출이 몰릴 때 데이터가
-      유실되거나 실시간 순위가 최종 순위와 어긋나는 문제를 주제로 삼았다.
-      메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서 피할 수 없으므로
-      그것을 전제로 설계했다.</p>
+    <p class="hero-lede">대회 중 제출이 몰릴 때 데이터가 유실되거나 실시간 순위가 최종 순위와
+      어긋나는 문제를 주제로 삼았다. 메시지 중복 전달과 이벤트 순서 역전은 분산 구성에서
+      피할 수 없으므로 그것을 전제로 설계했다.</p>
+    <p class="hero-lede"><b>Java 17 · Spring Boot 3.4 · MySQL · Redis · RabbitMQ로 온라인 저지
+      API 서버를 혼자 만들었다</b> (2025.09 ~, 11개월). 요구사항은
+      <a href="https://codeforces.com/profile/tmdrud" target="_blank" rel="noopener">Codeforces</a>
+      <b>Candidate Master</b>로 대회를 뛰며 겪은 것들에서 나왔다.</p>
 
     <ul class="metrics">
       <li class="metric">
         <span class="cond">제출 1,000/s × 150초</span>
         <span class="fig">127,687건 <small>전량 채점</small></span>
-        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 배수 10.4분</span>
+        <span class="note">접수 132,510건 · 중복 제외 · <b>유실 0</b> · 적체 해소 10.4분</span>
       </li>
       <li class="metric">
         <span class="cond">judge 노드 1대 SIGKILL</span>
@@ -452,6 +457,14 @@ STRENGTHS = """<section class="chapter" id="핵심-역량">
         집고 있었다. 정상 CPU는 7–9%였고, 병목은 다른 데 있었다.</p>
       <a class="ref" href="#최대-처리량은-하나가-아니다">→ 2장 · “최대 처리량”은 하나가 아니다</a>
     </article>
+    <article class="strength">
+      <h3>실행계획과 락 경로까지 내려가서 원인을 가른다.</h3>
+      <p>깊은 페이지 랭킹 조회가 233초까지 갔다. 집계 테이블과 스냅숏으로 뒤쪽 페이지를
+        0.113ms까지 줄였지만 solved 랭킹은 아직 47.7초다 — <strong>병목이 사라진 게 아니라
+        tie group 안으로 옮겨간 것</strong>이고 실행계획이 그걸 보여준다. 데드락 세 건도
+        격리 수준·잠금 진입점·인덱스로 원인 층이 매번 달랐다.</p>
+      <a class="ref" href="#ch4">→ 4장 · 랭킹 조회와 데드락</a>
+    </article>
   </div>
 </section>"""
 
@@ -502,9 +515,12 @@ CHAPTER_LEDES = {
     3: "스코어보드 전달을 <strong>DB outbox에서 RabbitMQ stream으로</strong> 옮겼다. "
     "이유는 처리 성능이 아니라 <strong>checkpoint의 위치</strong>다 — Redis를 스냅샷으로 되돌렸을 때 "
     "되감긴 offset + 1이 곧 재시작점이 된다.",
-    4: "<strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, "
+    4: "쓰기가 아니라 <strong>읽기 경로와 잠금</strong>에서 부딪힌 것. 깊은 페이지 랭킹 조회가 "
+    "233초까지 갔고, 집계 테이블과 스냅숏으로 <strong>0.113ms</strong>까지 줄였다. "
+    "데드락 세 건은 <strong>격리 수준 · 잠금 진입점 · 인덱스</strong>로 원인 층이 매번 달랐다.",
+    5: "<strong>검증하지 않은 것을 먼저 적는다.</strong> 채점이 <code>Thread.sleep</code>이라는 것, "
     "재현한 장애가 프로세스 즉사 한 종류라는 것, 아직 재지 않은 부대 I/O, "
-    "그리고 대회 제출과 일반 제출이 같은 큐를 쓴다는 것.",
+    "대회·일반 제출이 같은 큐를 쓴다는 것, 그리고 데드락에 회귀 테스트가 없다는 것.",
 }
 
 

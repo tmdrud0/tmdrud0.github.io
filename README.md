@@ -45,6 +45,11 @@ python build.py D:/path/to/web/docs/portfolio
 `make-charts.py`가 차트 캔버스를 760px로 잡는데 범례 글자가 x=652에서 시작해서
 `judge outbox (MySQL)` 같은 긴 라벨이 잘린다. 여기서는 `widen_chart()`가 캔버스를 넓혀
 피하지만, **PDF 쪽은 그대로 잘린다** — `make-charts.py`의 `W, H = 760, 340`을 고치는 게 근본 해결이다.
+(`make-rank-chart.py`는 900px로 그리므로 해당 없다.)
+
+`CHART_INSERTS`의 앵커는 원고의 **문장 앞부분**만 잡는다. 그래도 그 부분을 고치면 빌드가
+`차트 앵커가 0번 걸렸습니다`로 멈춘다 — 조용히 엉뚱한 자리에 붙는 것보다 낫다고 보고 그렇게 뒀다.
+멈추면 `build.py`의 앵커 문자열을 새 문장에 맞추면 된다.
 
 ## 배포
 
