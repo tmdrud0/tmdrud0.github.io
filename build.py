@@ -457,7 +457,7 @@ LINKS = f"""<section class="chapter" id="보조-자료">
     <a class="link-card" href="measurements.html">
       <b>부하 · 회복 측정 기록</b>
       <span>측정 환경 기준선, 런 11개의 조건과 원자료, 적체 · 복구 그래프,
-        지표와 알림 규칙, 테스트 범위, 그리고 폐기한 실행과 그 이유.</span>
+        그리고 같은 부하를 다시 돌리는 재현 절차.</span>
     </a>
     <a class="link-card" href="{REPO}" target="_blank" rel="noopener">
       <b>github.com/tmdrud0/web</b>
